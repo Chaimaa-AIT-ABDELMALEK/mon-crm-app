@@ -335,7 +335,7 @@ const SettingsModule = ({ smtpConfig, imapConfig, apisConfig, settingsMessage, h
           <div>
             <label className="text-sm text-gray-600 block mb-2">Provider</label>
             <select value={smtpConfig.provider} onChange={handleSmtpProviderChange} className="w-full p-2 border border-gray-300 rounded-lg">
-              <option value="gmail">Gmail</option><option value="hostinger">Hostinger</option><option value="custom">Custom</option>
+              <option value="sendgrid">SendGrid</option><option value="gmail">Gmail</option><option value="hostinger">Hostinger</option><option value="custom">Custom</option>
             </select>
           </div>
           <input type="email" placeholder="contact@pmtravel.ma" value={smtpConfig.email} onChange={handleSmtpEmailChange} className="w-full p-2 border border-gray-300 rounded-lg" />
