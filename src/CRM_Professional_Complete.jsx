@@ -3,6 +3,72 @@ import axios from 'axios';
 
 const API_URL = "http://127.0.0.1:8000";
 
+// ===== COMPOSANT SCRAPING STATUS CARD =====
+const ScrapingStatusCard = ({ title, description, isRunning, found, skipped, statusMsg, statusKind, recent, onLaunch, onCancel, isDisabled, buttonLabel }) => (
+  <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+      <div>
+        <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+        <p className="text-sm text-gray-500 mt-1">{description}</p>
+      </div>
+      <div className="flex gap-2 items-center">
+        {isRunning && (
+          <button onClick={onCancel} className="px-5 py-3 rounded-lg text-white font-medium transition whitespace-nowrap bg-red-600 hover:bg-red-700">
+            🛑 Arrêter
+          </button>
+        )}
+        <button 
+          onClick={onLaunch} 
+          disabled={isRunning || isDisabled}
+          className={`px-6 py-3 rounded-lg text-white font-medium transition whitespace-nowrap ${(isRunning || isDisabled) ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+        >
+          {isRunning ? '⏳ En cours...' : buttonLabel}
+        </button>
+      </div>
+    </div>
+
+    {/* Affichage du statut en temps réel */}
+    <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+      <p className="text-xs text-gray-600">
+        <strong>État:</strong> {isRunning ? '⏳ En cours' : (statusKind === 'completed' ? '✅ Terminé' : (statusKind === 'error' ? '❌ Erreur' : '⏸️ Arrêté'))}
+        {' | '}
+        <strong>Trouvés:</strong> {found} {' | '} <strong>Doublons:</strong> {skipped}
+      </p>
+    </div>
+
+    {isRunning && (
+      <div className="mb-4">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-sm font-medium text-gray-700">Progression</span>
+          <span className="text-sm font-semibold text-blue-600">{found} nouveaux · {skipped} doublons</span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden"><div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '100%' }}></div></div>
+      </div>
+    )}
+
+    {statusMsg && (
+      <div className={`p-4 rounded-lg mb-4 font-medium ${statusKind === 'completed' ? 'bg-green-100 text-green-800 border border-green-300' : statusKind === 'error' ? 'bg-red-100 text-red-800 border border-red-300' : statusKind === 'cancelled' ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-blue-100 text-blue-800 border border-blue-300'}`}>
+        {statusKind === 'completed' ? '✅ ' : statusKind === 'error' ? '❌ ' : statusKind === 'cancelled' ? '🛑 ' : '🕷️ '}{statusMsg}
+      </div>
+    )}
+
+    {recent && recent.length > 0 && (
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <h4 className="text-sm font-semibold text-gray-800 mb-3">📥 Prospects trouvés ({recent.length}):</h4>
+        <div className="space-y-2 max-h-64 overflow-y-auto">
+          {recent.map((p, i) => (
+            <div key={i} className="text-sm bg-white p-2 rounded border border-gray-200">
+              <p className="font-medium text-gray-800">{p.nom || p.name}</p>
+              {(p.email) && <p className="text-gray-600">📧 {p.email}</p>}
+              <p className="text-gray-500 text-xs">{p.ville || p.city}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+);
+
 // ===== MODULES =====
 const Dashboard = ({ stats, opportunities, activities }) => (
   <div className="space-y-6">
@@ -257,106 +323,103 @@ const CampaignsModule = ({ campaigns, newCampaign, editingCampaign, showCampaign
 const ScrapingModule = ({ scrapingHistory, fetchScrapingHistory, scrapJob, lastProspects, setLastProspects }) => {
   const API = "http://127.0.0.1:8000";
   const [starting, setStarting] = useState(false);
+  const [scrapJobLocal, setScrapJobLocal] = useState(scrapJob || { running: false, found: 0, skipped: 0, message: '', status: 'idle', recent: [] });
+  const [lastProspectsLocal, setLastProspectsLocal] = useState(lastProspects || []);
+  const token = localStorage.getItem('token');
 
   useEffect(() => {
     fetchScrapingHistory && fetchScrapingHistory();
   }, []);
 
-  const isRunning = scrapJob && scrapJob.running;
-  const found = scrapJob ? (scrapJob.found || 0) : 0;
-  const skipped = scrapJob ? (scrapJob.skipped || 0) : 0;
-  const recent = lastProspects || [];
-  const statusMsg = scrapJob ? scrapJob.message : '';
-  const statusKind = scrapJob ? scrapJob.status : 'idle';
+  // 🔄 Polling automatique du statut du scraper toutes les 2 secondes
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/scraper/statut?scope=env`, {
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        console.log('Scraper status (env):', data);
+        setScrapJobLocal(data || { running: false, found: 0, skipped: 0, message: '', status: 'idle', recent: [] });
+        
+        // Récupère aussi les derniers prospects trouvés
+        if (data?.running || data?.recent?.length > 0) {
+          const recentRes = await fetch(`${API}/scraper/derniers-prospects`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const recentData = await recentRes.json();
+          if (recentData && recentData.prospects) {
+            setLastProspectsLocal(recentData.prospects.slice(0, 10));
+          }
+        }
+      } catch (err) {
+        console.log('Polling statut scraper...');
+      }
+    }, 2000);
+    
+    return () => clearInterval(interval);
+  }, [token]);
+
+  const isRunning = scrapJobLocal?.running === true;
+  const found = scrapJobLocal?.found || 0;
+  const skipped = scrapJobLocal?.skipped || 0;
+  const recent = lastProspectsLocal || [];
+  const statusMsg = scrapJobLocal?.message || '';
+  const statusKind = scrapJobLocal?.status || 'idle';
 
   const handleLaunch = async () => {
     setStarting(true);
     try {
-      const token = localStorage.getItem('token');
-      await fetch(`${API}/scraper/lancer-tout-streaming`, {
+      const res = await fetch(`${API}/scraper/lancer-env`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
       });
-      // Le suivi se fait via le polling global (scrapJob) — rien d'autre à faire ici
+      const data = await res.json();
+      console.log('Scraper (.env) lancé:', data);
+      setStarting(false);
     } catch (err) {
       console.error('Erreur lancement scraping:', err);
+      setStarting(false);
     }
-    setStarting(false);
   };
 
   const handleCancel = async () => {
     try {
-      const token = localStorage.getItem('token');
-      await fetch(`${API}/scraper/annuler`, {
+      const res = await fetch(`${API}/scraper/annuler-env`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
       });
-      // Le polling global mettra à jour le statut (cancelled)
+      console.log('Scraper (.env) annulé:', res);
     } catch (err) {
       console.error('Erreur arrêt scraping:', err);
     }
   };
 
   const handleClearList = () => {
-    setLastProspects && setLastProspects([]);
+    setLastProspectsLocal([]);
   };
 
   return (
     <div className="space-y-6">
       <div><h2 className="text-2xl font-bold text-gray-800 mb-6">🕷️ Scraping & Prospection</h2></div>
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800">Lancer le scraping</h3>
-            <p className="text-sm text-gray-500 mt-1">Le scraping tourne en arrière-plan : vous pouvez changer de page, il continue. Les prospects sont enregistrés automatiquement dans vos contacts.</p>
-          </div>
-          <div className="flex gap-2 items-center">
-            {isRunning && (
-              <button onClick={handleCancel} className="px-5 py-3 rounded-lg text-white font-medium transition whitespace-nowrap bg-red-600 hover:bg-red-700">
-                🛑 Arrêter
-              </button>
-            )}
-            <button onClick={handleLaunch} disabled={isRunning || starting} className={`px-6 py-3 rounded-lg text-white font-medium transition whitespace-nowrap ${(isRunning || starting) ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
-              {isRunning ? '⏳ Scraping en cours...' : (starting ? '⏳ Démarrage...' : '🌍 Lancer le scraping')}
-            </button>
-          </div>
-        </div>
+      
+      {/* Scraping avec API .env */}
+      <ScrapingStatusCard
+        title="🕷️ Scraper (API .env)"
+        description="Lance le scraping avec l'API configurée dans le fichier .env. Les prospects sont enregistrés automatiquement dans vos contacts."
+        isRunning={isRunning}
+        found={found}
+        skipped={skipped}
+        statusMsg={statusMsg}
+        statusKind={statusKind}
+        recent={recent}
+        onLaunch={handleLaunch}
+        onCancel={handleCancel}
+        isDisabled={false}
+        buttonLabel="🌍 Lancer le scraping"
+      />
 
-        {isRunning && (
-          <div className="mb-4">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-gray-700">Progression (en arrière-plan)</span>
-              <span className="text-sm font-semibold text-blue-600">{found} nouveaux · {skipped} doublons</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden"><div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '100%' }}></div></div>
-          </div>
-        )}
-
-        {statusMsg && (
-          <div className={`p-4 rounded-lg mb-4 font-medium ${statusKind === 'completed' ? 'bg-green-100 text-green-800 border border-green-300' : statusKind === 'error' ? 'bg-red-100 text-red-800 border border-red-300' : statusKind === 'cancelled' ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-blue-100 text-blue-800 border border-blue-300'}`}>
-            {statusKind === 'completed' ? '✅ ' : statusKind === 'error' ? '❌ ' : statusKind === 'cancelled' ? '🛑 ' : '🕷️ '}{statusKind === 'error' ? (scrapJob.error || statusMsg) : statusMsg}
-          </div>
-        )}
-
-        {recent.length > 0 && (
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <div className="flex justify-between items-center mb-3">
-              <h4 className="text-sm font-semibold text-gray-800">📥 Prospects du dernier scraping ({recent.length}):</h4>
-              <button onClick={handleClearList} className="text-sm px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg border border-red-200">🗑️ Vider la liste</button>
-            </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {recent.map((p, i) => (
-                <div key={i} className="text-sm bg-white p-2 rounded border border-gray-200">
-                  <p className="font-medium text-gray-800">{p.nom}</p>
-                  {p.email && <p className="text-gray-600">📧 {p.email}</p>}
-                  <p className="text-gray-500 text-xs">{p.ville}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
+      {/* Historique des Scrapings */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-800">📋 Historique des Scrapings</h3>
@@ -399,17 +462,477 @@ const ReportsModule = ({ opportunities, contacts }) => (
   </div>
 );
 
-const SettingsModule = ({ smtpConfig, imapConfig, apisConfig, settingsMessage, handleSmtpProviderChange, handleSmtpEmailChange, handleSmtpPasswordChange, handleImapProviderChange, handleImapEmailChange, handleImapPasswordChange, handleApisGoogleChange, handleApisOpenaiChange, handleSaveSmtp, handleTestSmtp, handleSaveImap, handleSyncImap, handleSaveApis }) => (
+const SettingsModule = ({ smtpConfig, imapConfig, apisConfig, settingsMessage, handleSmtpProviderChange, handleSmtpEmailChange, handleSmtpPasswordChange, handleImapProviderChange, handleImapEmailChange, handleImapPasswordChange, handleApisGoogleChange, handleApisOpenaiChange, handleSaveSmtp, handleTestSmtp, handleSaveImap, handleSyncImap, handleSaveApis, handleSaveOpenaiApi }) => (
   <div className="space-y-6">
     <h2 className="text-2xl font-bold text-gray-800">⚙️ Settings</h2>
     {settingsMessage && <div className={`p-4 rounded-lg ${settingsMessage.includes('✅') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{settingsMessage}</div>}
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">🔍 API Scraping</h3><div className="space-y-4"><div><label className="text-sm text-gray-600 block mb-2">Google Places API</label><input type="password" placeholder="API Key" value={apisConfig.googlePlaces} onChange={handleApisGoogleChange} className="w-full p-2 border border-gray-300 rounded-lg" /></div><div><label className="text-sm text-gray-600 block mb-2">OpenAI API</label><input type="password" placeholder="API Key" value={apisConfig.openai} onChange={handleApisOpenaiChange} className="w-full p-2 border border-gray-300 rounded-lg" /></div><button onClick={handleSaveApis} className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">💾 Save APIs</button></div></div>
-      <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">📧 Email SMTP</h3><div className="space-y-4"><div><label className="text-sm text-gray-600 block mb-2">Provider</label><select value={smtpConfig.provider} onChange={handleSmtpProviderChange} className="w-full p-2 border border-gray-300 rounded-lg"><option value="sendgrid">SendGrid</option><option value="gmail">Gmail</option><option value="hostinger">Hostinger</option><option value="custom">Custom</option></select></div><input type="email" placeholder="contact@pmtravel.ma" value={smtpConfig.email} onChange={handleSmtpEmailChange} className="w-full p-2 border border-gray-300 rounded-lg" /><input type="password" placeholder="•••••••" value={smtpConfig.password} onChange={handleSmtpPasswordChange} className="w-full p-2 border border-gray-300 rounded-lg" /><div className="flex gap-2"><button onClick={handleTestSmtp} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg">🧪 Test</button><button onClick={handleSaveSmtp} className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">💾 Save</button></div></div></div>
+      <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">🔍 API Scraping</h3><div className="space-y-4"><div><label className="text-sm text-gray-600 block mb-2">Google Places API</label><input type="password" placeholder="API Key" value={apisConfig.googlePlaces} onChange={handleApisGoogleChange} className="w-full p-2 border border-gray-300 rounded-lg" /></div><button onClick={handleSaveApis} className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">💾 Save APIs</button></div></div>
+      <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">🤖 OpenAI API</h3><div className="space-y-4"><div><label className="text-sm text-gray-600 block mb-2">API Key</label><input type="password" placeholder="sk-proj-..." value={apisConfig.openai} onChange={handleApisOpenaiChange} className="w-full p-2 border border-gray-300 rounded-lg" /></div><button onClick={handleSaveOpenaiApi} className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg">💾 Save OpenAI</button></div></div>
+      <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">📧 Email SMTP</h3><div className="space-y-4"><div><label className="text-sm text-gray-600 block mb-2">Provider</label><select value={smtpConfig.provider} onChange={handleSmtpProviderChange} className="w-full p-2 border border-gray-300 rounded-lg"><option value="sendgrid">SendGrid</option><option value="gmail">Gmail</option><option value="hostinger">Hostinger</option><option value="custom">Custom</option></select></div><input type="email" placeholder="contact@pmtravel.ma" value={smtpConfig.email} onChange={handleSmtpEmailChange} className="w-full p-2 border border-gray-300 rounded-lg" /><input type="password" placeholder="•••••••" value={smtpConfig.password} onChange={handleSmtpPasswordChange} className="w-full p-2 border border-gray-300 rounded-lg" /><div className="flex gap-2"><button onClick={handleTestSmtp} className="w-full bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg">🧪 Test</button></div></div></div>
       <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">📨 Email IMAP</h3><div className="space-y-4"><select value={imapConfig.provider} onChange={handleImapProviderChange} className="w-full p-2 border border-gray-300 rounded-lg"><option value="gmail">Gmail</option><option value="hostinger">Hostinger</option></select><input type="email" placeholder="contact@pmtravel.ma" value={imapConfig.email} onChange={handleImapEmailChange} className="w-full p-2 border border-gray-300 rounded-lg" /><input type="password" placeholder="•••••••" value={imapConfig.password} onChange={handleImapPasswordChange} className="w-full p-2 border border-gray-300 rounded-lg" /><div className="flex gap-2"><button onClick={handleSyncImap} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg">🔄 Sync</button><button onClick={handleSaveImap} className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">💾 Save</button></div></div></div>
     </div>
   </div>
 );
+
+const EmailsModule = () => {
+  const [emails, setEmails] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filtre, setFiltre] = useState('tous');
+  const [recherche, setRecherche] = useState('');
+
+  const token = localStorage.getItem('token');
+
+  useEffect(() => {
+    fetchEmails();
+  }, []);
+
+  const fetchEmails = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/emails/envoyes`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setEmails(res.data);
+    } catch (err) {
+      console.error('Erreur chargement emails:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statutColors = {
+    'envoyé':  { bg: 'bg-blue-100',   text: 'text-blue-800'   },
+    'ouvert':  { bg: 'bg-green-100',  text: 'text-green-800'  },
+    'cliqué':  { bg: 'bg-purple-100', text: 'text-purple-800' },
+    'répondu': { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+    'échec':   { bg: 'bg-red-100',    text: 'text-red-800'    },
+    'sauvegardé': { bg: 'bg-gray-100', text: 'text-gray-800' }
+  };
+
+  const emailsFiltres = emails.filter(e => {
+    if (filtre !== 'tous' && e.statut !== filtre) return false;
+    if (recherche && !e.email_destinataire.toLowerCase().includes(recherche.toLowerCase()) &&
+        !e.sujet?.toLowerCase().includes(recherche.toLowerCase())) return false;
+    return true;
+  });
+
+  const kpis = {
+    total:    emails.length,
+    envoyes:  emails.filter(e => e.statut === 'envoyé').length,
+    ouverts:  emails.filter(e => e.statut === 'ouvert').length,
+    echecs:   emails.filter(e => e.statut === 'échec').length,
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <p className="text-gray-400">Chargement des emails...</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow-md p-5">
+          <p className="text-sm text-gray-500">Total envoyés</p>
+          <p className="text-3xl font-bold text-gray-800 mt-1">{kpis.total}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-md p-5">
+          <p className="text-sm text-gray-500">En attente</p>
+          <p className="text-3xl font-bold text-blue-600 mt-1">{kpis.envoyes}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-md p-5">
+          <p className="text-sm text-gray-500">Ouverts</p>
+          <p className="text-3xl font-bold text-green-600 mt-1">{kpis.ouverts}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-md p-5">
+          <p className="text-sm text-gray-500">Échecs</p>
+          <p className="text-3xl font-bold text-red-600 mt-1">{kpis.echecs}</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-md p-4 flex gap-3 flex-wrap items-center">
+        <input
+          type="text"
+          placeholder="🔍 Rechercher par email ou sujet..."
+          value={recherche}
+          onChange={e => setRecherche(e.target.value)}
+          className="flex-1 min-w-48 p-2 border border-gray-300 rounded-lg text-sm"
+        />
+        <select
+          value={filtre}
+          onChange={e => setFiltre(e.target.value)}
+          className="p-2 border border-gray-300 rounded-lg text-sm"
+        >
+          <option value="tous">Tous les statuts</option>
+          <option value="envoyé">Envoyé</option>
+          <option value="ouvert">Ouvert</option>
+          <option value="cliqué">Cliqué</option>
+          <option value="répondu">Répondu</option>
+          <option value="échec">Échec</option>
+          <option value="sauvegardé">Sauvegardé</option>
+        </select>
+        <button
+          onClick={fetchEmails}
+          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm text-gray-700"
+        >
+          🔄 Rafraîchir
+        </button>
+        <span className="text-sm text-gray-500">{emailsFiltres.length} email(s)</span>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Destinataire</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Sujet</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Campagne</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Statut</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {emailsFiltres.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-6 py-12 text-center text-gray-400">
+                  Aucun email trouvé
+                </td>
+              </tr>
+            ) : (
+              emailsFiltres.map((email, i) => {
+                const couleur = statutColors[email.statut] || { bg: 'bg-gray-100', text: 'text-gray-800' };
+                return (
+                  <tr key={email.id || i} className="border-b hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm text-blue-600">{email.email_destinataire}</td>
+                    <td className="px-6 py-4 text-sm text-gray-700 max-w-xs truncate">{email.sujet || '—'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{email.campagne_nom || '—'}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${couleur.bg} ${couleur.text}`}>
+                        {email.statut}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {email.date_envoi ? new Date(email.date_envoi).toLocaleString('fr-FR') : '—'}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const OutilsModule = ({ apisConfig, smtpConfig, setApisConfig }) => {
+  const [scraperStatus, setScraperStatus] = useState('idle');
+  const [scraperMessage, setScraperMessage] = useState('');
+  const [scraperFound, setScraperFound] = useState(0);
+  const [scraperSkipped, setScraperSkipped] = useState(0);
+  const [scraperRunning, setScraperRunning] = useState(false);
+  const [scraperRecent, setScraperRecent] = useState([]);
+  
+  const [openaiScraperStatus, setOpenaiScraperStatus] = useState('idle');
+  const [openaiScraperMessage, setOpenaiScraperMessage] = useState('');
+  const [openaiScraperFound, setOpenaiScraperFound] = useState(0);
+  const [openaiScraperSkipped, setOpenaiScraperSkipped] = useState(0);
+  const [openaiScraperRunning, setOpenaiScraperRunning] = useState(false);
+  const [openaiScraperRecent, setOpenaiScraperRecent] = useState([]);
+  
+  const [postTheme, setPostTheme] = useState('desert');
+  const [postPlateforme, setPostPlateforme] = useState('instagram');
+  const [postLangue, setPostLangue] = useState('français');
+  const [postStatus, setPostStatus] = useState('idle');
+  const [postResult, setPostResult] = useState(null);
+  const [calendrierStatus, setCalendrierStatus] = useState('idle');
+
+  const token = localStorage.getItem('token');
+  const headers = { Authorization: `Bearer ${token}` };
+  
+  // ✅ Vérifications strictes des APIs
+  const hasGooglePlaces = apisConfig?.googlePlaces && apisConfig.googlePlaces.includes('✅');
+  const hasOpenAI = apisConfig?.openai && apisConfig.openai.includes('✅');
+
+  // 🔄 Polling automatique pour les deux scrapers
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await axios.get(`${API_URL}/scraper/statut?scope=settings`, { headers });
+        const job = res.data;
+        setScraperRunning(job?.running || false);
+        setScraperFound(job?.found || 0);
+        setScraperSkipped(job?.skipped || 0);
+        // N'écrase pas un message d'erreur affiché tant qu'aucun job n'a démarré
+        if (job?.message) {
+          setScraperMessage(job.message);
+        }
+        setScraperStatus(job?.status || 'idle');
+        if (job?.recent?.length > 0) {
+          setScraperRecent(job.recent);
+        }
+      } catch (err) {
+        console.log('Polling scraper...');
+      }
+
+      // 🔄 Scraper OpenAI : job indépendant (scope=openai)
+      try {
+        const resOa = await axios.get(`${API_URL}/scraper/statut?scope=openai`, { headers });
+        const jobOa = resOa.data;
+        setOpenaiScraperRunning(jobOa?.running || false);
+        setOpenaiScraperFound(jobOa?.found || 0);
+        setOpenaiScraperSkipped(jobOa?.skipped || 0);
+        if (jobOa?.message) {
+          setOpenaiScraperMessage(jobOa.message);
+        }
+        setOpenaiScraperStatus(jobOa?.status || 'idle');
+        if (jobOa?.recent?.length > 0) {
+          setOpenaiScraperRecent(jobOa.recent);
+        }
+      } catch (err) {
+        console.log('Polling scraper OpenAI...');
+      }
+    }, 2000);
+    
+    return () => clearInterval(interval);
+  }, [token]);
+
+ const lancerScraper = async () => {
+  try {
+    const res = await axios.post(`${API_URL}/scraper/lancer-tout-streaming`, {}, { headers });
+    console.log('Réponse scraper:', res.data);
+    if (res.data?.status === 'error') {
+      setScraperMessage(res.data.message || '❌ Le scraper n\'a pas pu démarrer.');
+    } else {
+      setScraperMessage(res.data?.message || '✅ Scraping lancé.');
+    }
+  } catch (err) {
+    console.error('Erreur scraper:', err);
+    setScraperMessage('❌ Erreur: ' + (err.response?.data?.message || err.message));
+  }
+};
+
+const annulerScraper = async () => {
+  try {
+    await axios.post(`${API_URL}/scraper/annuler?scope=settings`, {}, { headers });
+  } catch (err) {
+    console.error('Erreur arrêt scraper:', err);
+  }
+};
+
+const lancerScraperAvecOpenAI = async () => {
+  try {
+    const res = await axios.post(`${API_URL}/scraper/lancer-openai-web-search`, {}, { headers });
+    console.log('Réponse scraper OpenAI:', res.data);
+    if (res.data?.status === 'error') {
+      setOpenaiScraperMessage(res.data.message || '❌ Le scraper n\'a pas pu démarrer.');
+    } else {
+      setOpenaiScraperMessage(res.data?.message || '✅ Scraping OpenAI lancé.');
+    }
+  } catch (err) {
+    console.error('Erreur scraper OpenAI:', err);
+    setOpenaiScraperMessage('❌ Erreur: ' + (err.response?.data?.message || err.message));
+  }
+};
+
+const annulerScraperOpenAI = async () => {
+  try {
+    await axios.post(`${API_URL}/scraper/annuler?scope=openai`, {}, { headers });
+  } catch (err) {
+    console.error('Erreur arrêt scraper OpenAI:', err);
+  }
+};
+
+  const genererPost = async () => {
+    setPostStatus('loading');
+    setPostResult(null);
+    try {
+      const res = await axios.post(
+        `${API_URL}/social/post/generer?plateforme=${postPlateforme}&theme=${postTheme}&langue=${postLangue}`,
+        {},
+        { headers }
+      );
+      setPostResult(res.data.post);
+      setPostStatus('success');
+    } catch (err) {
+      setPostStatus('error');
+      setTimeout(() => setPostStatus('idle'), 3000);
+    }
+  };
+
+  const genererCalendrier = async () => {
+    setCalendrierStatus('loading');
+    try {
+      await axios.post(`${API_URL}/social/calendrier/generer`, {}, { headers });
+      setCalendrierStatus('success');
+      setTimeout(() => setCalendrierStatus('idle'), 3000);
+    } catch (err) {
+      setCalendrierStatus('error');
+      setTimeout(() => setCalendrierStatus('idle'), 3000);
+    }
+  };
+
+  const btnClass = (status) => {
+    if (status === 'loading') return 'bg-gray-400 cursor-not-allowed text-white px-4 py-2 rounded-lg font-medium w-full';
+    if (status === 'success') return 'bg-green-500 text-white px-4 py-2 rounded-lg font-medium w-full';
+    if (status === 'error') return 'bg-red-500 text-white px-4 py-2 rounded-lg font-medium w-full';
+    return 'bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium w-full transition';
+  };
+
+  const btnLabel = (status, label) => {
+    if (status === 'loading') return '⏳ En cours...';
+    if (status === 'success') return '✅ Succès';
+    if (status === 'error') return '❌ Erreur';
+    return label;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">🔌 Statut des APIs configurées</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Google Places', configured: apisConfig?.googlePlaces, icon: '🗺️' },
+            { label: 'OpenAI', configured: apisConfig?.openai, icon: '🤖' },
+            { label: 'SendGrid SMTP', configured: !!smtpConfig?.email, icon: '📧' },
+            { label: 'Instagram', configured: false, icon: '📸' }
+          ].map((api, i) => (
+            <div key={i} className={`p-4 rounded-lg border-2 text-center ${api.configured ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+              <div className="text-2xl mb-2">{api.icon}</div>
+              <p className="text-sm font-medium text-gray-700">{api.label}</p>
+              <span className={`text-xs font-bold ${api.configured ? 'text-green-600' : 'text-gray-400'}`}>
+                {api.configured ? '✅ Configuré' : '❌ Non configuré'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Google Places Scraper avec barre - API Settings */}
+        {!hasGooglePlaces && (
+          <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 col-span-1">
+            <p className="text-yellow-800 font-semibold">⚠️ API Google Places non configurée</p>
+            <p className="text-yellow-700 text-sm">Configurez l'API dans <strong>Settings → API Scraping</strong> pour utiliser ce scraper.</p>
+          </div>
+        )}
+        {hasGooglePlaces && (
+          <ScrapingStatusCard
+            title="🕷️ Scraper Google Maps"
+            description="Lance le scraper avec l'API Google Places configurée dans Settings. Les prospects sont enregistrés automatiquement."
+            isRunning={scraperRunning}
+            found={scraperFound}
+            skipped={scraperSkipped}
+            statusMsg={scraperMessage}
+            statusKind={scraperStatus}
+            recent={scraperRecent}
+            onLaunch={lancerScraper}
+            onCancel={annulerScraper}
+            isDisabled={false}
+            buttonLabel="🚀 Lancer le Scraper"
+          />
+        )}
+
+        {/* OpenAI Web Search Scraper avec barre - API Settings */}
+        {!hasOpenAI && (
+          <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 col-span-1">
+            <p className="text-yellow-800 font-semibold">⚠️ API OpenAI non configurée</p>
+            <p className="text-yellow-700 text-sm">Configurez l'API dans <strong>Settings → OpenAI API</strong> pour utiliser ce scraper.</p>
+          </div>
+        )}
+        {hasOpenAI && (
+          <ScrapingStatusCard
+            title="🤖 Scraper OpenAI Web Search"
+            description="Lance le scraper avec l'API OpenAI configurée dans Settings. Synthétise les prospects depuis le web."
+            isRunning={openaiScraperRunning}
+            found={openaiScraperFound}
+            skipped={openaiScraperSkipped}
+            statusMsg={openaiScraperMessage}
+            statusKind={openaiScraperStatus}
+            recent={openaiScraperRecent}
+            onLaunch={lancerScraperAvecOpenAI}
+            onCancel={annulerScraperOpenAI}
+            isDisabled={false}
+            buttonLabel="🌐 Scraper avec Web Search"
+          />
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Générateur de Posts Sociaux */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-2">📱 Générer Post Réseaux Sociaux</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            Génère un post avec ChatGPT et DALL-E. Utilise la clé OpenAI configurée dans Settings.
+          </p>
+          <div className="space-y-2 mb-4">
+            <select
+              value={postPlateforme}
+              onChange={e => setPostPlateforme(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+            >
+              <option value="instagram">Instagram</option>
+              <option value="facebook">Facebook</option>
+              <option value="linkedin">LinkedIn</option>
+            </select>
+            <select
+              value={postTheme}
+              onChange={e => setPostTheme(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+            >
+              <option value="desert">🏜️ Désert Sahara</option>
+              <option value="medina">🕌 Médina Marrakech</option>
+              <option value="montagne">⛰️ Montagnes Atlas</option>
+              <option value="gastronomie">🍲 Gastronomie</option>
+              <option value="luxe">✨ Luxe & Spa</option>
+              <option value="aventure">🏍️ Aventure</option>
+            </select>
+            <select
+              value={postLangue}
+              onChange={e => setPostLangue(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+            >
+              <option value="français">🇫🇷 Français</option>
+              <option value="anglais">🇬🇧 Anglais</option>
+              <option value="espagnol">🇪🇸 Espagnol</option>
+            </select>
+          </div>
+          {postResult && (
+            <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-3 text-sm">
+              <p className="font-medium text-blue-800 mb-1">✅ Post généré :</p>
+              <p className="text-blue-700 text-xs">{postResult.contenu?.substring(0, 150)}...</p>
+              {postResult.image_url && (
+                <img src={postResult.image_url} alt="Post généré" className="mt-2 rounded w-full h-32 object-cover" />
+              )}
+            </div>
+          )}
+          <button
+            onClick={genererPost}
+            disabled={postStatus === 'loading'}
+            className={btnClass(postStatus)}
+          >
+            {btnLabel(postStatus, '✨ Générer Post')}
+          </button>
+        </div>
+
+        {/* Calendrier Éditorial */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-2">📅 Calendrier Éditorial</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            Génère automatiquement 21 posts pour toute la semaine — 3 posts par jour sur Instagram, Facebook et LinkedIn.
+          </p>
+          <button
+            onClick={genererCalendrier}
+            disabled={calendrierStatus === 'loading'}
+            className={btnClass(calendrierStatus)}
+          >
+            {btnLabel(calendrierStatus, '📅 Générer Calendrier')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ===== COMPOSANT PRINCIPAL CRM =====
 const CRM = () => {
@@ -421,9 +944,7 @@ const CRM = () => {
   const [activities, setActivities] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [scrapingHistory, setScrapingHistory] = useState([]);
-  // État du scraping en arrière-plan (persiste à travers les changements de page)
   const [scrapJob, setScrapJob] = useState(null);
-  // Liste des prospects du dernier scraping — reste affichée jusqu'au prochain lancement
   const [lastProspects, setLastProspects] = useState([]);
 
   const [newContact, setNewContact] = useState({
@@ -497,6 +1018,28 @@ const CRM = () => {
   const handleApisGoogleChange = useCallback((e) => setApisConfig(prev => ({...prev, googlePlaces: e.target.value})), []);
   const handleApisOpenaiChange = useCallback((e) => setApisConfig(prev => ({...prev, openai: e.target.value})), []);
 
+  const fetchApisFromBackend = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`${API_URL}/settings/api/list`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      console.log('APIs du backend:', res.data);
+      setApisConfig(prev => ({
+        ...prev,
+        googlePlaces: res.data.google_places ? '✅ Configuré' : '',
+        openai: res.data.openai ? '✅ Configuré' : ''
+      }));
+    } catch (err) {
+      console.error('Erreur fetch APIs:', err);
+      setApisConfig(prev => ({
+        ...prev,
+        googlePlaces: '',
+        openai: ''
+      }));
+    }
+  }, []);
+
   const stats = {
     totalContacts: contacts.length,
     activeDeals: opportunities.filter(o => o.stage !== 'Gagné').length,
@@ -506,7 +1049,10 @@ const CRM = () => {
     activeCampaigns: campaigns.filter(c => c.status !== 'Complétée').length,
   };
 
-  useEffect(() => { fetchContacts(); }, []);
+  useEffect(() => { 
+    fetchContacts(); 
+    fetchApisFromBackend();
+  }, [fetchApisFromBackend]);
 
   const fetchContacts = async () => {
     try {
@@ -524,21 +1070,27 @@ const CRM = () => {
     } catch (err) { console.error("Erreur fetch:", err); }
   };
 
-  // Polling permanent du statut de scraping (au niveau CRM => survit aux changements de page)
   useEffect(() => {
     let wasRunning = false;
+    let lastContactsUpdate = 0;
     const token = localStorage.getItem('token');
     const tick = async () => {
       try {
-        const res = await axios.get(`${API_URL}/scraper/statut`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const res = await axios.get(`${API_URL}/scraper/statut?scope=env`, { headers: { 'Authorization': `Bearer ${token}` } });
         const job = res.data;
         setScrapJob(job);
-        // Pendant un scraping actif, on reflète les prospects détectés.
-        // Une fois terminé, on n'écrase plus la liste (le bouton Vider la contrôle).
         if (job.running && job.recent && job.recent.length > 0) {
           setLastProspects(job.recent);
         }
-        // Quand un scraping vient de se terminer, on rafraîchit contacts + historique
+        
+        // 🔄 Rafraîchit les contacts toutes les 5 secondes PENDANT le scraping
+        const now = Date.now();
+        if (job.running && (now - lastContactsUpdate > 5000)) {
+          fetchContacts();
+          lastContactsUpdate = now;
+        }
+        
+        // ✅ Rafraîchit les contacts quand le scraping finit
         if (wasRunning && !job.running) {
           fetchContacts();
           fetchScrapingHistory();
@@ -580,7 +1132,7 @@ const CRM = () => {
         email: contact.email,
         telephone: contact.phone,
         ville: contact.city,
-        secteur: contact.secteur,   // ← envoi du secteur
+        secteur: contact.secteur,
         source: "crm",
         score: 0,
         email_valide: false
@@ -624,19 +1176,72 @@ const CRM = () => {
   const handleSaveSmtp = async () => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/settings/smtp`, smtpConfig, { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
-      setSettingsMessage('✅ SMTP configuré!');
+      
+      // 1️⃣ Sauvegarde la config SMTP
+      const response = await axios.post(`${API_URL}/settings/smtp`, smtpConfig, {
+        headers: { 
+          'Authorization': `Bearer ${token}`, 
+          'Content-Type': 'application/json' 
+        }
+      });
+      
+      // 2️⃣ NOUVEAU - Enregistre un email dans le module Emails
+      await axios.post(`${API_URL}/emails/sauvegarder`, {
+        campagne_id: null,
+        email_destinataire: smtpConfig.email,
+        sujet: '[CONFIG] Configuration SMTP mise à jour',
+        contenu: `Configuration SMTP sauvegardée avec succès.\n\nDétails:\nServeur SMTP: ${smtpConfig.host}\nPort: ${smtpConfig.port}\nProvider: ${smtpConfig.provider}\nEmail: ${smtpConfig.email}`,
+        statut: 'sauvegardé'
+      }, {
+        headers: { 
+          'Authorization': `Bearer ${token}`, 
+          'Content-Type': 'application/json' 
+        }
+      });
+      
+      setSettingsMessage('✅ Config SMTP sauvegardée et enregistrée dans Emails!');
       setTimeout(() => setSettingsMessage(''), 3000);
-    } catch (err) { setSettingsMessage('❌ Erreur: ' + getErrorMessage(err)); }
+    } catch (err) {
+      console.error('Erreur:', err);
+      setSettingsMessage('❌ Erreur: ' + getErrorMessage(err));
+    }
   };
+
   const handleTestSmtp = async () => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/settings/smtp/test`, smtpConfig, { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
-      setSettingsMessage('✅ Email test envoyé!');
+      const testEmail = smtpConfig.email || 'test@example.com';
+      
+      // 1️⃣ Envoie l'email test
+      await axios.post(`${API_URL}/settings/smtp/test`, smtpConfig, { 
+        headers: { 
+          'Authorization': `Bearer ${token}`, 
+          'Content-Type': 'application/json' 
+        } 
+      });
+      
+      // 2️⃣ Enregistre l'email test dans le module Emails
+      await axios.post(`${API_URL}/emails/sauvegarder`, {
+        campagne_id: null,
+        email_destinataire: testEmail,
+        sujet: '[TEST] Vérification configuration SMTP',
+        contenu: 'Ceci est un email de test pour vérifier la configuration SMTP du CRM.',
+        statut: 'envoyé'
+      }, { 
+        headers: { 
+          'Authorization': `Bearer ${token}`, 
+          'Content-Type': 'application/json' 
+        } 
+      });
+      
+      setSettingsMessage('✅ Email test envoyé et enregistré dans Emails!');
       setTimeout(() => setSettingsMessage(''), 3000);
-    } catch (err) { setSettingsMessage('❌ Erreur: ' + getErrorMessage(err)); }
+    } catch (err) {
+      console.error('Erreur:', err);
+      setSettingsMessage('❌ Erreur: ' + getErrorMessage(err)); 
+    }
   };
+
   const handleSaveImap = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -653,72 +1258,74 @@ const CRM = () => {
       setTimeout(() => setSettingsMessage(''), 3000);
     } catch (err) { setSettingsMessage('❌ Erreur: ' + getErrorMessage(err)); }
   };
- const handleSaveApis = async () => {
-  try {
-    const token = localStorage.getItem('token');
-    let savedCount = 0;
-    let errors = [];
 
-    // ---- Validation Google Places ----
-    const googleKey = apisConfig.googlePlaces?.trim();
-    if (googleKey) {
-      // Format approximatif : commence par AIza, 39 caractères environ
+  const handleSaveApis = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      let errors = [];
+
+      const googleKey = apisConfig.googlePlaces?.trim();
+      if (!googleKey) {
+        setSettingsMessage('⚠️ Clé Google Places requise.');
+        setTimeout(() => setSettingsMessage(''), 4000);
+        return;
+      }
+
       const googleRegex = /^AIza[0-9A-Za-z\-_]{35}$/;
       if (!googleRegex.test(googleKey)) {
-        errors.push('Clé Google Places invalide (format attendu : commence par AIza, 39 caractères)');
-      } else {
-        await axios.post(
-          `${API_URL}/settings/api`,
-          { api_name: 'google_places', config: { api_key: googleKey, enabled: true } },
-          { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }
-        );
-        savedCount++;
+        setSettingsMessage('❌ Clé Google Places invalide');
+        setTimeout(() => setSettingsMessage(''), 6000);
+        return;
       }
-    }
 
-    // ---- Validation OpenAI ----
-    const openaiKey = apisConfig.openai?.trim();
-    if (openaiKey) {
-      const openaiRegex = /^sk-[A-Za-z0-9]{48}$/;
+      await axios.post(
+        `${API_URL}/settings/api`,
+        { api_name: 'google_places', config: { api_key: googleKey, enabled: true } },
+        { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }
+      );
+
+      setSettingsMessage('✅ Google Places API sauvegardée!');
+      await fetchApisFromBackend();
+      setTimeout(() => setSettingsMessage(''), 3000);
+    } catch (err) {
+      setSettingsMessage(`❌ Erreur: ${err.message}`);
+      setTimeout(() => setSettingsMessage(''), 5000);
+    }
+  };
+
+  const handleSaveOpenaiApi = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      const openaiKey = apisConfig.openai?.trim();
+      if (!openaiKey) {
+        setSettingsMessage('⚠️ Clé OpenAI requise.');
+        setTimeout(() => setSettingsMessage(''), 4000);
+        return;
+      }
+
+      const openaiRegex = /^sk-proj-[A-Za-z0-9_-]+$/;
       if (!openaiRegex.test(openaiKey)) {
-        errors.push('Clé OpenAI invalide (format attendu : commence par sk- et 48 caractères)');
-      } else {
-        await axios.post(
-          `${API_URL}/settings/api`,
-          { api_name: 'openai', config: { api_key: openaiKey, enabled: true } },
-          { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }
-        );
-        savedCount++;
+        setSettingsMessage('❌ Clé OpenAI invalide (doit commencer par sk-proj-)');
+        setTimeout(() => setSettingsMessage(''), 6000);
+        return;
       }
-    }
 
-    // Aucune clé renseignée ou toutes vides ?
-    if (!googleKey && !openaiKey) {
-      setSettingsMessage('⚠️ Aucune clé API renseignée.');
-      setTimeout(() => setSettingsMessage(''), 4000);
-      return;
-    }
+      await axios.post(
+        `${API_URL}/settings/api`,
+        { api_name: 'openai', config: { api_key: openaiKey, enabled: true } },
+        { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }
+      );
 
-    // Affichage des erreurs de format
-    if (errors.length > 0) {
-      setSettingsMessage(`❌ ${errors.join(' · ')}`);
-      setTimeout(() => setSettingsMessage(''), 6000);
-      return;
+      setSettingsMessage('✅ OpenAI API sauvegardée!');
+      await fetchApisFromBackend();
+      setTimeout(() => setSettingsMessage(''), 3000);
+    } catch (err) {
+      setSettingsMessage(`❌ Erreur: ${err.message}`);
+      setTimeout(() => setSettingsMessage(''), 5000);
     }
+  };
 
-    // Succès
-    if (savedCount === 1) {
-      setSettingsMessage(`✅ 1 clé API sauvegardée (format valide).`);
-    } else if (savedCount === 2) {
-      setSettingsMessage(`✅ 2 clés API sauvegardées (format valide).`);
-    }
-    setTimeout(() => setSettingsMessage(''), 3000);
-  } catch (err) {
-    const errorMsg = getErrorMessage(err);
-    setSettingsMessage(`❌ Erreur backend : ${errorMsg}`);
-    setTimeout(() => setSettingsMessage(''), 5000);
-  }
-};
   const renderContent = () => {
     switch (currentModule) {
       case 'dashboard': return <Dashboard stats={stats} opportunities={opportunities} activities={activities} />;
@@ -728,7 +1335,9 @@ const CRM = () => {
       case 'campaigns': return <CampaignsModule campaigns={campaigns} newCampaign={newCampaign} editingCampaign={editingCampaign} showCampaignForm={showCampaignForm} handleCampaignNameChange={handleCampaignNameChange} handleCampaignTypeChange={handleCampaignTypeChange} handleCampaignStatusChange={handleCampaignStatusChange} handleCampaignContactsChange={handleCampaignContactsChange} handleCampaignSentChange={handleCampaignSentChange} handleCampaignOpenedChange={handleCampaignOpenedChange} handleAddCampaign={handleAddCampaign} handleEditCampaign={handleEditCampaign} handleDeleteCampaign={handleDeleteCampaign} setShowCampaignForm={setShowCampaignForm} setEditingCampaign={setEditingCampaign} setNewCampaign={setNewCampaign} />;
       case 'reports': return <ReportsModule opportunities={opportunities} contacts={contacts} />;
       case 'scraping': return <ScrapingModule scrapingHistory={scrapingHistory} fetchScrapingHistory={fetchScrapingHistory} scrapJob={scrapJob} lastProspects={lastProspects} setLastProspects={setLastProspects} />;
-      case 'settings': return <SettingsModule smtpConfig={smtpConfig} imapConfig={imapConfig} apisConfig={apisConfig} settingsMessage={settingsMessage} handleSmtpProviderChange={handleSmtpProviderChange} handleSmtpEmailChange={handleSmtpEmailChange} handleSmtpPasswordChange={handleSmtpPasswordChange} handleImapProviderChange={handleImapProviderChange} handleImapEmailChange={handleImapEmailChange} handleImapPasswordChange={handleImapPasswordChange} handleApisGoogleChange={handleApisGoogleChange} handleApisOpenaiChange={handleApisOpenaiChange} handleSaveSmtp={handleSaveSmtp} handleTestSmtp={handleTestSmtp} handleSaveImap={handleSaveImap} handleSyncImap={handleSyncImap} handleSaveApis={handleSaveApis} />;
+      case 'outils': return <OutilsModule apisConfig={apisConfig} smtpConfig={smtpConfig} setApisConfig={setApisConfig} />;
+      case 'settings': return <SettingsModule smtpConfig={smtpConfig} imapConfig={imapConfig} apisConfig={apisConfig} settingsMessage={settingsMessage} handleSmtpProviderChange={handleSmtpProviderChange} handleSmtpEmailChange={handleSmtpEmailChange} handleSmtpPasswordChange={handleSmtpPasswordChange} handleImapProviderChange={handleImapProviderChange} handleImapEmailChange={handleImapEmailChange} handleImapPasswordChange={handleImapPasswordChange} handleApisGoogleChange={handleApisGoogleChange} handleApisOpenaiChange={handleApisOpenaiChange} handleSaveSmtp={handleSaveSmtp} handleTestSmtp={handleTestSmtp} handleSaveImap={handleSaveImap} handleSyncImap={handleSyncImap} handleSaveApis={handleSaveApis} handleSaveOpenaiApi={handleSaveOpenaiApi} />;
+      case 'emails': return <EmailsModule />;
       default: return <Dashboard stats={stats} opportunities={opportunities} activities={activities} />;
     }
   };
@@ -749,6 +1358,8 @@ const CRM = () => {
             { id: 'activities', label: 'Activités', icon: '📋' },
             { id: 'campaigns', label: 'Campagnes', icon: '📢' },
             { id: 'reports', label: 'Rapports', icon: '📈' },
+            { id: 'outils', label: 'Outils', icon: '🛠️' },
+            { id: 'emails', label: 'Emails', icon: '📨' },
             { id: 'settings', label: 'Settings', icon: '⚙️' }
           ].map((item) => (
             <button key={item.id} onClick={() => setCurrentModule(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${currentModule === item.id ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}>
@@ -760,7 +1371,7 @@ const CRM = () => {
       </div>
       <div className="flex-1 flex flex-col">
         <div className="bg-white shadow-sm border-b border-gray-200 px-8 py-6">
-          <h1 className="text-3xl font-bold text-gray-900">{currentModule === 'dashboard' ? 'Dashboard' : currentModule === 'contacts' ? 'Gestion des Contacts' : currentModule === 'scraping' ? 'Scraping de Prospects' : currentModule === 'opportunities' ? 'Pipeline de Vente' : currentModule === 'activities' ? 'Activités' : currentModule === 'campaigns' ? 'Campagnes Marketing' : currentModule === 'reports' ? 'Rapports & Analytics' : 'Settings'}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{currentModule === 'dashboard' ? 'Dashboard' : currentModule === 'contacts' ? 'Gestion des Contacts' : currentModule === 'scraping' ? 'Scraping de Prospects' : currentModule === 'opportunities' ? 'Pipeline de Vente' : currentModule === 'activities' ? 'Activités' : currentModule === 'campaigns' ? 'Campagnes Marketing' : currentModule === 'reports' ? 'Rapports & Analytics' : currentModule === 'outils' ? 'Outils & Actions' : currentModule === 'emails' ? 'Emails Envoyés' : 'Settings'}</h1>
           <p className="text-gray-600 mt-1">Bienvenue dans votre CRM professionnel</p>
         </div>
         <div className="flex-1 overflow-auto p-8">{renderContent()}</div>
