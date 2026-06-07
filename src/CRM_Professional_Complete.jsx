@@ -70,9 +70,6 @@ const ChartCard = ({ title, data, type }) => (
 );
 
 const ContactsModule = ({ contacts, setContacts, newContact, editingContact, showContactForm, handleContactNameChange, handleContactEmailChange, handleContactPhoneChange, handleContactCityChange, handleContactSecteurChange, handleContactStatusChange, handleAddContact, handleEditContact, handleDeleteContact, setShowContactForm, setEditingContact, setNewContact }) => {
-  const [scrapState, setScrapState] = useState('idle');
-  const [liveCount, setLiveCount] = useState(0);
-  const [totalFound, setTotalFound] = useState(0);
   const [searchText, setSearchText] = useState('');
   const [filterCity, setFilterCity] = useState('');
   const [filterSecteur, setFilterSecteur] = useState('');
@@ -85,18 +82,6 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
     'agence de voyage': { name: 'Agence de voyage', icon: '✈️', badge: 'bg-purple-100 text-purple-800', border: 'border-purple-300' },
     'tour operator': { name: 'Tour Operator', icon: '🎒', badge: 'bg-orange-100 text-orange-800', border: 'border-orange-300' }
   };
-
-  const COMBOS = [
-    { secteur: 'hotel', city: 'Marrakech' },
-    { secteur: 'hotel', city: 'Casablanca' },
-    { secteur: 'riad', city: 'Marrakech' },
-    { secteur: 'riad', city: 'Fes' },
-    { secteur: 'transport touristique', city: 'Marrakech' },
-    { secteur: 'agence de voyage', city: 'Marrakech' },
-    { secteur: 'agence de voyage', city: 'Casablanca' },
-    { secteur: 'tour operator', city: 'New York' },
-    { secteur: 'tour operator', city: 'Los Angeles' },
-  ];
 
   const detectTypeFromName = (name) => {
     const lowerName = name.toLowerCase();
@@ -143,66 +128,6 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
   const availableCities = [...new Set(contacts.map(c => c.city).filter(Boolean))].sort();
   const secteurs = [...new Set(contacts.map(c => c.secteur).filter(Boolean))].sort();
 
-  const handleLaunchScraping = async () => {
-    setScrapState('running');
-    setLiveCount(0);
-    setTotalFound(0);
-    const token = localStorage.getItem('token');
-    let grandTotal = 0;
-
-    try {
-      for (const { secteur, city } of COMBOS) {
-        try {
-          const response = await fetch(
-            `http://127.0.0.1:8000/scraper/lancer-streaming?sector=${encodeURIComponent(secteur)}&city=${encodeURIComponent(city)}`,
-            { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }
-          );
-          if (!response.ok) continue;
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            for (let i = 0; i < lines.length - 1; i++) {
-              const line = lines[i];
-              if (!line.startsWith('data: ')) continue;
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.type === 'prospect') setLiveCount(prev => prev + 1);
-                if (data.type === 'complete') {
-                  grandTotal += (data.found || 0);
-                  setTotalFound(grandTotal);
-                  const res = await axios.get('http://127.0.0.1:8000/prospects', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                  });
-                  setContacts(res.data.map(p => ({
-                    id: p.id,
-                    name: p.nom,
-                    email: p.email,
-                    phone: p.telephone,
-                    city: p.ville,
-                    secteur: p.secteur || detectTypeFromName(p.nom),
-                    status: p.statut || 'Active'
-                  })));
-                }
-              } catch (_) {}
-            }
-            buffer = lines[lines.length - 1];
-          }
-        } catch (_) {}
-      }
-      setScrapState('success');
-    } catch (err) {
-      console.error('Scraping error:', err);
-      setScrapState('error');
-    } finally {
-      setTimeout(() => setScrapState('idle'), 6000);
-    }
-  };
-
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token && contacts.length === 0) {
@@ -237,22 +162,9 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-gray-800">Gestion des Contacts</h2>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={handleLaunchScraping} disabled={scrapState === 'running'} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-white transition ${scrapState === 'running' ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-            {scrapState === 'running' ? (<><span className="crm-spin">🕷️</span><span>Scraping…</span>{liveCount > 0 && <span className="bg-white text-indigo-600 font-bold text-xs px-2 py-0.5 rounded-full">{liveCount}</span>}</>) : (<><span>🕷️</span><span>Lancer le Scraping</span></>)}
-          </button>
           <button onClick={() => { setShowContactForm(true); setEditingContact(null); setNewContact({ name: '', email: '', phone: '', secteur: '', city: '', status: 'Active' }); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition font-medium">+ Nouveau Contact</button>
         </div>
       </div>
-
-      {scrapState === 'running' && (
-        <div className="flex items-center gap-4 bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-3">
-          <span className="crm-spin text-xl">🕷️</span>
-          <div className="flex-1"><p className="text-sm font-semibold text-indigo-700">Scraping en cours…</p><div className="w-full bg-indigo-100 rounded-full h-1.5 mt-1.5"><div className="bg-indigo-500 h-1.5 rounded-full transition-all" style={{ width: liveCount > 0 ? `${Math.min(10 + liveCount * 1.5, 92)}%` : '8%' }} /></div></div>
-          {liveCount > 0 && <span className="text-indigo-700 font-bold text-sm">{liveCount} détectés</span>}
-        </div>
-      )}
-      {scrapState === 'success' && <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-5 py-3"><span className="text-xl">✅</span><div><p className="text-sm font-semibold text-green-700">Scraping terminé !</p><p className="text-xs text-green-600 mt-0.5">{totalFound} nouveaux prospects ajoutés</p></div></div>}
-      {scrapState === 'error' && <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-5 py-3"><span className="text-xl">❌</span><p className="text-sm text-red-700">Erreur lors du scraping</p></div>}
 
       {showContactForm && (
         <div className="bg-white rounded-lg shadow-md p-6">
@@ -342,84 +254,137 @@ const CampaignsModule = ({ campaigns, newCampaign, editingCampaign, showCampaign
   </div>
 );
 
-const ScrapingModule = ({ scrapingHistory, setScrapingHistory, scrapingStatus, setScrapingStatus }) => {
-  const [selectedSector, setSelectedSector] = useState('hotel');
-  const [selectedCity, setSelectedCity] = useState('Marrakech');
-  const [isRunning, setIsRunning] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [liveProspects, setLiveProspects] = useState([]);
-  const [prospectCount, setProspectCount] = useState(0);
-  const [totalProspectsFound, setTotalProspectsFound] = useState(0);
-
-  const SECTEURS_HOTELS = ['hotel', 'riad', 'transport touristique'];
-  const SECTEURS_AGENCES = ['agence de voyage', 'tour operator'];
-  const VILLES_HOTELS = ['Marrakech', 'Casablanca', 'Agadir', 'Fes', 'Rabat', 'Chefchaouen', 'Tanger', 'Ouarzazate', 'Merzouga'];
-  const VILLES_AGENCES = ['New York', 'Los Angeles', 'Miami', 'Chicago', 'Toronto', 'Montreal', 'Mexico City', 'Sao Paulo', 'Rio de Janeiro', 'Buenos Aires', 'Bogota', 'Santiago', 'Lima'];
-
-  const isHotelSector = SECTEURS_HOTELS.includes(selectedSector);
-  const availableCities = isHotelSector ? VILLES_HOTELS : VILLES_AGENCES;
+const ScrapingModule = ({ scrapingHistory, fetchScrapingHistory, scrapJob, lastProspects, setLastProspects }) => {
+  const API = "http://127.0.0.1:8000";
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const response = await axios.get('http://127.0.0.1:8000/scraper/historique', { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
-        const history = response.data.map(item => ({ id: item.id, sector: item.sector, city: item.city, date: new Date(item.date_execution).toLocaleString('fr-FR'), status: item.status === 'completed' ? 'Complété' : 'En attente', prospectsFound: item.prospects_found || 0, logs: item.logs || [] }));
-        setScrapingHistory(history);
-        setIsLoading(false);
-      } catch (err) { console.error('❌ Erreur chargement historique:', err); setIsLoading(false); }
-    };
-    fetchHistory();
-  }, [setScrapingHistory]);
+    fetchScrapingHistory && fetchScrapingHistory();
+  }, []);
 
-  const handleSectorChange = (e) => {
-    const newSector = e.target.value;
-    setSelectedSector(newSector);
-    const isNewHotel = SECTEURS_HOTELS.includes(newSector);
-    const newCities = isNewHotel ? VILLES_HOTELS : VILLES_AGENCES;
-    if (!newCities.includes(selectedCity)) setSelectedCity(newCities[0]);
-  };
+  const isRunning = scrapJob && scrapJob.running;
+  const found = scrapJob ? (scrapJob.found || 0) : 0;
+  const skipped = scrapJob ? (scrapJob.skipped || 0) : 0;
+  const recent = lastProspects || [];
+  const statusMsg = scrapJob ? scrapJob.message : '';
+  const statusKind = scrapJob ? scrapJob.status : 'idle';
 
-  const handleLaunchScraping = async () => {
-    setIsRunning(true);
-    setLiveProspects([]);
-    setProspectCount(0);
-    setTotalProspectsFound(0);
-    setScrapingStatus('🕷️ Scraping en cours...');
+  const handleLaunch = async () => {
+    setStarting(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://127.0.0.1:8000/scraper/lancer-streaming?sector=${selectedSector}&city=${selectedCity}`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        for (let i = 0; i < lines.length - 1; i++) {
-          const line = lines[i];
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.type === 'prospect') { setLiveProspects(prev => [data.prospect, ...prev]); setProspectCount(data.count); setScrapingStatus(`🕷️ Scraping en cours... ${data.count} prospects trouvés`); }
-              else if (data.type === 'complete') { setScrapingStatus(`✅ ${data.message}`); setTotalProspectsFound(data.found); setIsRunning(false); const newHistory = { id: Date.now(), sector: selectedSector, city: selectedCity, date: new Date().toLocaleString('fr-FR'), status: 'Complété', prospectsFound: data.found, logs: [] }; setScrapingHistory([newHistory, ...scrapingHistory]); }
-              else if (data.type === 'error') { setScrapingStatus(`❌ Erreur: ${data.message}`); setIsRunning(false); }
-            } catch (err) { console.error('Erreur parsing JSON:', err); }
-          }
-        }
-        buffer = lines[lines.length - 1];
-      }
-      if (!isRunning) setScrapingStatus('✅ Scraping terminé!');
-    } catch (err) { console.error('❌ Erreur scraping:', err); setScrapingStatus(`❌ Erreur: ${err.message}`); setIsRunning(false); }
+      await fetch(`${API}/scraper/lancer-tout-streaming`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      // Le suivi se fait via le polling global (scrapJob) — rien d'autre à faire ici
+    } catch (err) {
+      console.error('Erreur lancement scraping:', err);
+    }
+    setStarting(false);
+  };
+
+  const handleCancel = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${API}/scraper/annuler`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      // Le polling global mettra à jour le statut (cancelled)
+    } catch (err) {
+      console.error('Erreur arrêt scraping:', err);
+    }
+  };
+
+  const handleClearList = () => {
+    setLastProspects && setLastProspects([]);
   };
 
   return (
     <div className="space-y-6">
       <div><h2 className="text-2xl font-bold text-gray-800 mb-6">🕷️ Scraping & Prospection</h2></div>
-      <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">Configurer le Scraping</h3><div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"><div><label className="block text-sm font-medium text-gray-700 mb-2">📂 Secteur</label><select value={selectedSector} onChange={handleSectorChange} disabled={isRunning} className="w-full p-2 border border-gray-300 rounded-lg disabled:bg-gray-100"><optgroup label="🇲🇦 Maroc">{SECTEURS_HOTELS.map(sector => (<option key={sector} value={sector}>{sector}</option>))}</optgroup><optgroup label="🌍 Étrangers">{SECTEURS_AGENCES.map(sector => (<option key={sector} value={sector}>{sector}</option>))}</optgroup></select></div><div><label className="block text-sm font-medium text-gray-700 mb-2">🏙️ Ville</label><select value={selectedCity} onChange={(e) => setSelectedCity(e.target.value)} disabled={isRunning} className="w-full p-2 border border-gray-300 rounded-lg disabled:bg-gray-100">{availableCities.map(city => (<option key={city} value={city}>{city}</option>))}</select></div><div className="flex items-end"><button onClick={handleLaunchScraping} disabled={isRunning} className={`w-full px-4 py-2 rounded-lg text-white font-medium transition ${isRunning ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>{isRunning ? '⏳ Scraping...' : '🚀 Lancer le Scraping'}</button></div></div>{isRunning && (<div className="mb-4"><div className="flex justify-between items-center mb-2"><span className="text-sm font-medium text-gray-700">Progression</span><span className="text-sm font-semibold text-blue-600">{prospectCount} prospects</span></div><div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '100%' }}></div></div></div>)}{scrapingStatus && (<div className={`p-4 rounded-lg mb-4 font-medium ${scrapingStatus.includes('✅') ? 'bg-green-100 text-green-800 border border-green-300' : scrapingStatus.includes('❌') ? 'bg-red-100 text-red-800 border border-red-300' : 'bg-blue-100 text-blue-800 border border-blue-300'}`}>{scrapingStatus}</div>)}{liveProspects.length > 0 && (<div className="bg-gray-50 border border-gray-200 rounded-lg p-4"><h4 className="text-sm font-semibold text-gray-800 mb-3">📥 Prospects détectés en temps réel:</h4><div className="space-y-2 max-h-48 overflow-y-auto">{liveProspects.map((prospect, i) => (<div key={i} className="text-sm bg-white p-2 rounded border border-gray-200"><p className="font-medium text-gray-800">{prospect.nom}</p><p className="text-gray-600">📧 {prospect.email}</p><p className="text-gray-500 text-xs">{prospect.ville}</p></div>))}</div></div>)}</div>
-      <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">📋 Historique des Scrapings</h3>{isLoading ? (<p className="text-gray-600">⏳ Chargement...</p>) : scrapingHistory.length === 0 ? (<p className="text-gray-400 italic">Aucun scraping effectué</p>) : (<div className="space-y-3">{scrapingHistory.map((item) => (<div key={item.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50"><div className="flex justify-between items-start mb-2"><div><p className="font-semibold text-gray-800">{item.sector} — {item.city}</p><p className="text-sm text-gray-500">{item.date}</p></div><span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">{item.status}</span></div><p className="text-sm text-blue-600 font-semibold">👥 {item.prospectsFound} prospect{item.prospectsFound !== 1 ? 's' : ''}</p></div>))}</div>)}</div>
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800">Lancer le scraping</h3>
+            <p className="text-sm text-gray-500 mt-1">Le scraping tourne en arrière-plan : vous pouvez changer de page, il continue. Les prospects sont enregistrés automatiquement dans vos contacts.</p>
+          </div>
+          <div className="flex gap-2 items-center">
+            {isRunning && (
+              <button onClick={handleCancel} className="px-5 py-3 rounded-lg text-white font-medium transition whitespace-nowrap bg-red-600 hover:bg-red-700">
+                🛑 Arrêter
+              </button>
+            )}
+            <button onClick={handleLaunch} disabled={isRunning || starting} className={`px-6 py-3 rounded-lg text-white font-medium transition whitespace-nowrap ${(isRunning || starting) ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
+              {isRunning ? '⏳ Scraping en cours...' : (starting ? '⏳ Démarrage...' : '🌍 Lancer le scraping')}
+            </button>
+          </div>
+        </div>
+
+        {isRunning && (
+          <div className="mb-4">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium text-gray-700">Progression (en arrière-plan)</span>
+              <span className="text-sm font-semibold text-blue-600">{found} nouveaux · {skipped} doublons</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden"><div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '100%' }}></div></div>
+          </div>
+        )}
+
+        {statusMsg && (
+          <div className={`p-4 rounded-lg mb-4 font-medium ${statusKind === 'completed' ? 'bg-green-100 text-green-800 border border-green-300' : statusKind === 'error' ? 'bg-red-100 text-red-800 border border-red-300' : statusKind === 'cancelled' ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-blue-100 text-blue-800 border border-blue-300'}`}>
+            {statusKind === 'completed' ? '✅ ' : statusKind === 'error' ? '❌ ' : statusKind === 'cancelled' ? '🛑 ' : '🕷️ '}{statusKind === 'error' ? (scrapJob.error || statusMsg) : statusMsg}
+          </div>
+        )}
+
+        {recent.length > 0 && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <div className="flex justify-between items-center mb-3">
+              <h4 className="text-sm font-semibold text-gray-800">📥 Prospects du dernier scraping ({recent.length}):</h4>
+              <button onClick={handleClearList} className="text-sm px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg border border-red-200">🗑️ Vider la liste</button>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {recent.map((p, i) => (
+                <div key={i} className="text-sm bg-white p-2 rounded border border-gray-200">
+                  <p className="font-medium text-gray-800">{p.nom}</p>
+                  {p.email && <p className="text-gray-600">📧 {p.email}</p>}
+                  <p className="text-gray-500 text-xs">{p.ville}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-800">📋 Historique des Scrapings</h3>
+          <button onClick={() => fetchScrapingHistory && fetchScrapingHistory()} className="text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700">🔄 Rafraîchir</button>
+        </div>
+        {(!scrapingHistory || scrapingHistory.length === 0) ? (
+          <p className="text-gray-400 italic">Aucun scraping effectué</p>
+        ) : (
+          <div className="space-y-3">
+            {scrapingHistory.map((item) => (
+              <div key={item.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <p className="font-semibold text-gray-800">{item.sector} — {item.city}</p>
+                    <p className="text-sm text-gray-500">{item.date}</p>
+                  </div>
+                  <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">{item.status}</span>
+                </div>
+                <div className="flex gap-4 text-sm">
+                  <span className="text-green-600 font-semibold">✅ {item.inserted != null ? item.inserted : '—'} ajoutés</span>
+                  <span className="text-amber-600 font-semibold">⏭️ {item.skipped != null ? item.skipped : '—'} doublons</span>
+                  <span className="text-gray-500">👥 {item.prospectsFound} traités</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -456,7 +421,10 @@ const CRM = () => {
   const [activities, setActivities] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [scrapingHistory, setScrapingHistory] = useState([]);
-  const [scrapingStatus, setScrapingStatus] = useState('');
+  // État du scraping en arrière-plan (persiste à travers les changements de page)
+  const [scrapJob, setScrapJob] = useState(null);
+  // Liste des prospects du dernier scraping — reste affichée jusqu'au prochain lancement
+  const [lastProspects, setLastProspects] = useState([]);
 
   const [newContact, setNewContact] = useState({
     name: '',
@@ -554,6 +522,54 @@ const CRM = () => {
         status: p.statut || p.status || "Active"
       })));
     } catch (err) { console.error("Erreur fetch:", err); }
+  };
+
+  // Polling permanent du statut de scraping (au niveau CRM => survit aux changements de page)
+  useEffect(() => {
+    let wasRunning = false;
+    const token = localStorage.getItem('token');
+    const tick = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/scraper/statut`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const job = res.data;
+        setScrapJob(job);
+        // Pendant un scraping actif, on reflète les prospects détectés.
+        // Une fois terminé, on n'écrase plus la liste (le bouton Vider la contrôle).
+        if (job.running && job.recent && job.recent.length > 0) {
+          setLastProspects(job.recent);
+        }
+        // Quand un scraping vient de se terminer, on rafraîchit contacts + historique
+        if (wasRunning && !job.running) {
+          fetchContacts();
+          fetchScrapingHistory();
+        }
+        wasRunning = job.running;
+      } catch (err) { /* silencieux */ }
+    };
+    tick();
+    const interval = setInterval(tick, 2500);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchScrapingHistory = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`${API_URL}/scraper/historique`, { headers: { 'Authorization': `Bearer ${token}` } });
+      setScrapingHistory(res.data.map(item => {
+        let inserted, skipped;
+        try {
+          const l = typeof item.logs === 'string' ? JSON.parse(item.logs) : item.logs;
+          if (l) { inserted = l.inserted; skipped = l.skipped; }
+        } catch (_) {}
+        return {
+          id: item.id, sector: item.sector, city: item.city,
+          date: item.date_execution ? new Date(item.date_execution).toLocaleString('fr-FR') : '',
+          status: item.status === 'completed' ? 'Complété' : (item.status || 'En attente'),
+          prospectsFound: item.prospects_found || 0,
+          inserted, skipped
+        };
+      }));
+    } catch (err) { console.error('Erreur historique:', err); }
   };
 
   const addContactAPI = async (contact) => {
@@ -711,7 +727,7 @@ const CRM = () => {
       case 'activities': return <ActivitiesModule activities={activities} newActivity={newActivity} editingActivity={editingActivity} showActivityForm={showActivityForm} handleActivityTypeChange={handleActivityTypeChange} handleActivityContactChange={handleActivityContactChange} handleActivityDescriptionChange={handleActivityDescriptionChange} handleActivityDateChange={handleActivityDateChange} handleActivityResultChange={handleActivityResultChange} handleAddActivity={handleAddActivity} handleEditActivity={handleEditActivity} handleDeleteActivity={handleDeleteActivity} setShowActivityForm={setShowActivityForm} setEditingActivity={setEditingActivity} setNewActivity={setNewActivity} />;
       case 'campaigns': return <CampaignsModule campaigns={campaigns} newCampaign={newCampaign} editingCampaign={editingCampaign} showCampaignForm={showCampaignForm} handleCampaignNameChange={handleCampaignNameChange} handleCampaignTypeChange={handleCampaignTypeChange} handleCampaignStatusChange={handleCampaignStatusChange} handleCampaignContactsChange={handleCampaignContactsChange} handleCampaignSentChange={handleCampaignSentChange} handleCampaignOpenedChange={handleCampaignOpenedChange} handleAddCampaign={handleAddCampaign} handleEditCampaign={handleEditCampaign} handleDeleteCampaign={handleDeleteCampaign} setShowCampaignForm={setShowCampaignForm} setEditingCampaign={setEditingCampaign} setNewCampaign={setNewCampaign} />;
       case 'reports': return <ReportsModule opportunities={opportunities} contacts={contacts} />;
-      case 'scraping': return <ScrapingModule scrapingHistory={scrapingHistory} setScrapingHistory={setScrapingHistory} scrapingStatus={scrapingStatus} setScrapingStatus={setScrapingStatus} />;
+      case 'scraping': return <ScrapingModule scrapingHistory={scrapingHistory} fetchScrapingHistory={fetchScrapingHistory} scrapJob={scrapJob} lastProspects={lastProspects} setLastProspects={setLastProspects} />;
       case 'settings': return <SettingsModule smtpConfig={smtpConfig} imapConfig={imapConfig} apisConfig={apisConfig} settingsMessage={settingsMessage} handleSmtpProviderChange={handleSmtpProviderChange} handleSmtpEmailChange={handleSmtpEmailChange} handleSmtpPasswordChange={handleSmtpPasswordChange} handleImapProviderChange={handleImapProviderChange} handleImapEmailChange={handleImapEmailChange} handleImapPasswordChange={handleImapPasswordChange} handleApisGoogleChange={handleApisGoogleChange} handleApisOpenaiChange={handleApisOpenaiChange} handleSaveSmtp={handleSaveSmtp} handleTestSmtp={handleTestSmtp} handleSaveImap={handleSaveImap} handleSyncImap={handleSyncImap} handleSaveApis={handleSaveApis} />;
       default: return <Dashboard stats={stats} opportunities={opportunities} activities={activities} />;
     }
@@ -728,6 +744,7 @@ const CRM = () => {
           {[
             { id: 'dashboard', label: 'Dashboard', icon: '📊' },
             { id: 'contacts', label: 'Contacts', icon: '👥' },
+            { id: 'scraping', label: 'Scraping', icon: '🕷️' },
             { id: 'opportunities', label: 'Opportunités', icon: '🤝' },
             { id: 'activities', label: 'Activités', icon: '📋' },
             { id: 'campaigns', label: 'Campagnes', icon: '📢' },
@@ -743,7 +760,7 @@ const CRM = () => {
       </div>
       <div className="flex-1 flex flex-col">
         <div className="bg-white shadow-sm border-b border-gray-200 px-8 py-6">
-          <h1 className="text-3xl font-bold text-gray-900">{currentModule === 'dashboard' ? 'Dashboard' : currentModule === 'contacts' ? 'Gestion des Contacts' : currentModule === 'opportunities' ? 'Pipeline de Vente' : currentModule === 'activities' ? 'Activités' : currentModule === 'campaigns' ? 'Campagnes Marketing' : currentModule === 'reports' ? 'Rapports & Analytics' : 'Settings'}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{currentModule === 'dashboard' ? 'Dashboard' : currentModule === 'contacts' ? 'Gestion des Contacts' : currentModule === 'scraping' ? 'Scraping de Prospects' : currentModule === 'opportunities' ? 'Pipeline de Vente' : currentModule === 'activities' ? 'Activités' : currentModule === 'campaigns' ? 'Campagnes Marketing' : currentModule === 'reports' ? 'Rapports & Analytics' : 'Settings'}</h1>
           <p className="text-gray-600 mt-1">Bienvenue dans votre CRM professionnel</p>
         </div>
         <div className="flex-1 overflow-auto p-8">{renderContent()}</div>
