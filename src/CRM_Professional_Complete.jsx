@@ -139,6 +139,7 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
   const [searchText, setSearchText] = useState('');
   const [filterCity, setFilterCity] = useState('');
   const [filterSecteur, setFilterSecteur] = useState('');
+  const [selectedContacts, setSelectedContacts] = useState([]);
 
   // TYPES D'ÉTABLISSEMENT
   const ESTABLISHMENT_TYPES = {
@@ -194,6 +195,48 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
   const availableCities = [...new Set(contacts.map(c => c.city).filter(Boolean))].sort();
   const secteurs = [...new Set(contacts.map(c => c.secteur).filter(Boolean))].sort();
 
+  // ===================== GESTION DE LA SÉLECTION =====================
+  const toggleSelect = (id) => {
+    setSelectedContacts(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const selectAll = () => {
+    if (selectedContacts.length === filteredContacts.length) {
+      setSelectedContacts([]);
+    } else {
+      setSelectedContacts(filteredContacts.map(c => c.id));
+    }
+  };
+
+ const handleSendEmails = async () => {
+  if (selectedContacts.length === 0) {
+    alert("Sélectionnez au moins un contact");
+    return;
+  }
+  const token = localStorage.getItem('token');
+  try {
+    const res = await axios.post(
+      `${API_URL}/campagnes/envoyer-selection`,
+      { contact_ids: selectedContacts },
+      { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }
+    );
+    if (res.data.echecs > 0 && res.data.envoyes === 0) {
+      alert(`❌ Échec total : aucun email envoyé. Vérifiez la configuration SendGrid.`);
+    } else if (res.data.echecs > 0) {
+      alert(`✅ Partiellement réussi : ${res.data.envoyes} envoyé(s), ${res.data.echecs} échec(s).`);
+    } else {
+      alert(`✅ Succès : ${res.data.envoyes} email(s) envoyé(s) !`);
+    }
+    setSelectedContacts([]);
+  } catch (err) {
+    console.error(err);
+    alert("❌ Erreur lors de l'envoi (problème réseau ou serveur).");
+  }
+};
+  // ===================================================================
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token && contacts.length === 0) {
@@ -228,6 +271,14 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-gray-800">Gestion des Contacts</h2>
         <div className="flex gap-2 flex-wrap">
+          {selectedContacts.length > 0 && (
+            <button
+              onClick={handleSendEmails}
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition font-medium"
+            >
+              📧 Envoyer email ({selectedContacts.length})
+            </button>
+          )}
           <button onClick={() => { setShowContactForm(true); setEditingContact(null); setNewContact({ name: '', email: '', phone: '', secteur: '', city: '', status: 'Active' }); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition font-medium">+ Nouveau Contact</button>
         </div>
       </div>
@@ -271,20 +322,48 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
         <div className="px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b"><h3 className="font-bold text-gray-800">{hasActiveFilters ? `🔎 ${filteredContacts.length} contact${filteredContacts.length !== 1 ? 's' : ''}` : `📋 ${contacts.length} contact${contacts.length !== 1 ? 's' : ''} au total`}</h3></div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-100 border-b"><tr><th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Nom</th><th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Email</th><th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Téléphone</th><th className="px-6 py-4 text-left text-sm font-bold text-gray-700">🏢 SECTEUR</th><th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Ville</th><th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Statut</th><th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Actions</th></tr></thead>
+            <thead className="bg-gray-100 border-b">
+              <tr>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">
+                  <input
+                    type="checkbox"
+                    onChange={selectAll}
+                    checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0}
+                  />
+                </th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Nom</th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Email</th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Téléphone</th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">🏢 SECTEUR</th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Ville</th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Statut</th>
+                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Actions</th>
+              </tr>
+            </thead>
             <tbody>
-              {filteredContacts.length === 0 ? (<tr><td colSpan={7} className="px-6 py-12 text-center"><p className="text-gray-400 text-lg">{contacts.length === 0 ? '😐 Aucun contact. Lancez le scraping!' : '😕 Aucun contact ne correspond à vos critères'}</p></td></tr>) : (
+              {filteredContacts.length === 0 ? (
+                <tr><td colSpan={8} className="px-6 py-12 text-center"><p className="text-gray-400 text-lg">{contacts.length === 0 ? '😐 Aucun contact. Lancez le scraping!' : '😕 Aucun contact ne correspond à vos critères'}</p></td></tr>
+              ) : (
                 filteredContacts.map((contact) => {
                   const secteurInfo = getSecteurInfo(contact.secteur);
-                  return (<tr key={contact.id} className="border-b hover:bg-gray-50 transition">
-                    <td className="px-6 py-4 text-sm font-medium text-gray-800">{contact.name}</td>
-                    <td className="px-6 py-4 text-sm text-blue-600">{contact.email}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{contact.phone || '—'}</td>
-                    <td className="px-6 py-4"><div className={`px-4 py-3 rounded-lg text-sm font-bold inline-flex items-center gap-2 ${secteurInfo.badge} border-2 ${secteurInfo.border}`}><span className="text-xl">{secteurInfo.icon}</span><span>{secteurInfo.name}</span></div></td>
-                    <td className="px-6 py-4 text-sm text-gray-700 font-medium">{contact.city}</td>
-                    <td className="px-6 py-4 text-sm"><span className={`px-3 py-1 rounded-full text-xs font-bold ${contact.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{contact.status === 'Active' ? '🟢 Actif' : contact.status}</span></td>
-                    <td className="px-6 py-4 text-sm space-x-3"><button onClick={() => handleEditContact(contact)} className="text-blue-600 hover:text-blue-800 font-bold">Modifier</button><button onClick={() => handleDeleteContact(contact.id)} className="text-red-600 hover:text-red-800 font-bold">Supprimer</button></td>
-                  </tr>);
+                  return (
+                    <tr key={contact.id} className="border-b hover:bg-gray-50 transition">
+                      <td className="px-6 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedContacts.includes(contact.id)}
+                          onChange={() => toggleSelect(contact.id)}
+                        />
+                      </td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-800">{contact.name}</td>
+                      <td className="px-6 py-4 text-sm text-blue-600">{contact.email}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{contact.phone || '—'}</td>
+                      <td className="px-6 py-4"><div className={`px-4 py-3 rounded-lg text-sm font-bold inline-flex items-center gap-2 ${secteurInfo.badge} border-2 ${secteurInfo.border}`}><span className="text-xl">{secteurInfo.icon}</span><span>{secteurInfo.name}</span></div></td>
+                      <td className="px-6 py-4 text-sm text-gray-700 font-medium">{contact.city}</td>
+                      <td className="px-6 py-4 text-sm"><span className={`px-3 py-1 rounded-full text-xs font-bold ${contact.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{contact.status === 'Active' ? '🟢 Actif' : contact.status}</span></td>
+                      <td className="px-6 py-4 text-sm space-x-3"><button onClick={() => handleEditContact(contact)} className="text-blue-600 hover:text-blue-800 font-bold">Modifier</button><button onClick={() => handleDeleteContact(contact.id)} className="text-red-600 hover:text-red-800 font-bold">Supprimer</button></td>
+                    </tr>
+                  );
                 })
               )}
             </tbody>
@@ -452,15 +531,68 @@ const ScrapingModule = ({ scrapingHistory, fetchScrapingHistory, scrapJob, lastP
   );
 };
 
-const ReportsModule = ({ opportunities, contacts }) => (
-  <div className="space-y-6">
-    <h2 className="text-2xl font-bold text-gray-800">Rapports & Analytics</h2>
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">Revenu par Étape</h3><div className="space-y-4">{['Prospection', 'Négociation', 'Proposition', 'Gagné'].map((stage, i) => { const amount = opportunities.filter(o => o.stage === stage).reduce((acc, o) => acc + Number(o.amount || 0), 0); const total = opportunities.reduce((acc, o) => acc + Number(o.amount || 0), 0); const percent = total > 0 ? (amount / total) * 100 : 0; return (<div key={i}><div className="flex justify-between text-sm mb-1"><span className="font-medium text-gray-700">{stage}</span><span className="text-gray-600">{amount.toLocaleString()}€</span></div><div className="w-full bg-gray-200 rounded-full h-2.5"><div className="bg-gradient-to-r from-blue-500 to-purple-600 h-2.5 rounded-full" style={{ width: `${percent}%` }}></div></div></div>); })}</div></div>
-      <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">Distribution des Contacts</h3><div className="space-y-3">{['Hôtel', 'Riad', 'Agence de voyage', 'Tour operator', 'Transport touristique'].map(label => { const count = contacts.filter(c => c.secteur && c.secteur.toLowerCase() === label.toLowerCase()).length; return (<div key={label}><div className="flex justify-between text-sm mb-1"><span className="font-medium text-gray-700">{label}</span><span className="text-gray-600">{count}</span></div><div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-blue-500 h-2 rounded-full" style={{ width: contacts.length ? `${(count / contacts.length) * 100}%` : '0%' }}></div></div></div>); })}</div></div>
+const ReportsModule = ({ opportunities, contacts }) => {
+  // Mapping entre la valeur stockée en base (clé) et le label affiché
+  const secteurLabels = {
+    'hotel': 'Hôtel',
+    'riad': 'Riad',
+    'agence de voyage': 'Agence de voyage',
+    'tour operator': 'Tour operator',
+    'transport touristique': 'Transport touristique'
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-800">Rapports & Analytics</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Bloc Revenu par Étape (inchangé) */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Revenu par Étape</h3>
+          <div className="space-y-4">
+            {['Prospection', 'Négociation', 'Proposition', 'Gagné'].map((stage, i) => {
+              const amount = opportunities.filter(o => o.stage === stage).reduce((acc, o) => acc + Number(o.amount || 0), 0);
+              const total = opportunities.reduce((acc, o) => acc + Number(o.amount || 0), 0);
+              const percent = total > 0 ? (amount / total) * 100 : 0;
+              return (
+                <div key={i}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="font-medium text-gray-700">{stage}</span>
+                    <span className="text-gray-600">{amount.toLocaleString()}€</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div className="bg-gradient-to-r from-blue-500 to-purple-600 h-2.5 rounded-full" style={{ width: `${percent}%` }}></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Bloc Distribution des Contacts - CORRIGÉ */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Distribution des Contacts</h3>
+          <div className="space-y-3">
+            {Object.entries(secteurLabels).map(([key, label]) => {
+              const count = contacts.filter(c => c.secteur === key).length;
+              const percent = contacts.length ? (count / contacts.length) * 100 : 0;
+              return (
+                <div key={key}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="font-medium text-gray-700">{label}</span>
+                    <span className="text-gray-600">{count}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${percent}%` }}></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const SettingsModule = ({ smtpConfig, imapConfig, apisConfig, settingsMessage, handleSmtpProviderChange, handleSmtpEmailChange, handleSmtpPasswordChange, handleImapProviderChange, handleImapEmailChange, handleImapPasswordChange, handleApisGoogleChange, handleApisOpenaiChange, handleSaveSmtp, handleTestSmtp, handleSaveImap, handleSyncImap, handleSaveApis, handleSaveOpenaiApi }) => (
   <div className="space-y-6">
@@ -1017,6 +1149,7 @@ const CRM = () => {
   const handleImapPasswordChange = useCallback((e) => setImapConfig(prev => ({...prev, password: e.target.value})), []);
   const handleApisGoogleChange = useCallback((e) => setApisConfig(prev => ({...prev, googlePlaces: e.target.value})), []);
   const handleApisOpenaiChange = useCallback((e) => setApisConfig(prev => ({...prev, openai: e.target.value})), []);
+ // Gestion de la sélection d'un contact
 
   const fetchApisFromBackend = useCallback(async () => {
     try {
@@ -1039,6 +1172,7 @@ const CRM = () => {
       }));
     }
   }, []);
+  
 
   const stats = {
     totalContacts: contacts.length,
