@@ -608,84 +608,230 @@ const SettingsModule = ({ smtpConfig, imapConfig, apisConfig, settingsMessage, h
 );
 
 const EmailsModule = () => {
-  const [emails, setEmails] = useState([]);
+  const [view, setView] = useState('conversations'); // 'conversations' | 'detail'
+  const [conversations, setConversations] = useState([]);
+  const [selectedConv, setSelectedConv] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [filtre, setFiltre] = useState('tous');
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
+  const [filtre, setFiltre] = useState('tous'); // 'tous' | 'repondu' | 'envoye_seul'
   const [recherche, setRecherche] = useState('');
 
   const token = localStorage.getItem('token');
 
   useEffect(() => {
-    fetchEmails();
+    fetchConversations();
+    // Corriger automatiquement les statuts mal assignés au chargement
+    axios.post(`${API_URL}/emails/corriger-statuts`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {});
   }, []);
 
-  const fetchEmails = async () => {
+  const fetchConversations = async () => {
+    setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/emails/envoyes`, {
+      const res = await axios.get(`${API_URL}/emails/conversations`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setEmails(res.data);
+      setConversations(res.data);
     } catch (err) {
-      console.error('Erreur chargement emails:', err);
+      console.error('Erreur chargement conversations:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const statutColors = {
-    'envoyé':  { bg: 'bg-blue-100',   text: 'text-blue-800'   },
-    'ouvert':  { bg: 'bg-green-100',  text: 'text-green-800'  },
-    'cliqué':  { bg: 'bg-purple-100', text: 'text-purple-800' },
-    'répondu': { bg: 'bg-yellow-100', text: 'text-yellow-800' },
-    'échec':   { bg: 'bg-red-100',    text: 'text-red-800'    },
-    'sauvegardé': { bg: 'bg-gray-100', text: 'text-gray-800' }
+  const syncIMAP = async () => {
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      const res = await axios.post(`${API_URL}/settings/imap/sync`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSyncMsg(res.data.message || '✅ Synchronisation terminée');
+      await fetchConversations();
+    } catch (err) {
+      const detail = err.response?.data?.detail || 'Erreur de synchronisation';
+      setSyncMsg(`❌ ${detail}`);
+    } finally {
+      setSyncing(false);
+    }
   };
 
-  const emailsFiltres = emails.filter(e => {
-    if (filtre !== 'tous' && e.statut !== filtre) return false;
-    if (recherche && !e.email_destinataire.toLowerCase().includes(recherche.toLowerCase()) &&
-        !e.sujet?.toLowerCase().includes(recherche.toLowerCase())) return false;
+  const openConversation = async (conv) => {
+    // Rafraîchir les statuts de tracking depuis le backend avant d'afficher
+    try {
+      const res = await axios.get(`${API_URL}/emails/conversations`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const updated = res.data.find(c => c.email === conv.email);
+      setSelectedConv(updated || conv);
+    } catch {
+      setSelectedConv(conv);
+    }
+    setView('detail');
+    // Marquer les emails reçus non lus comme lus
+    const unread = conv.messages.filter(m => m.direction === 'reçu' && (m.lu === false || m.lu === 0));
+    for (const m of unread) {
+      try {
+        await axios.post(`${API_URL}/emails/recus/${m.id}/lu`, {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch {}
+    }
+  };
+
+  const convsFiltrees = conversations.filter(c => {
+    if (filtre === 'repondu' && !c.a_repondu) return false;
+    if (filtre === 'envoye_seul' && c.a_repondu) return false;
+    if (recherche) {
+      const q = recherche.toLowerCase();
+      if (!c.email.includes(q) && !(c.nom || '').toLowerCase().includes(q)) return false;
+    }
     return true;
   });
 
+  const allSentMessages = conversations.flatMap(c => c.messages.filter(m => m.direction === 'envoyé'));
   const kpis = {
-    total:    emails.length,
-    envoyes:  emails.filter(e => e.statut === 'envoyé').length,
-    ouverts:  emails.filter(e => e.statut === 'ouvert').length,
-    echecs:   emails.filter(e => e.statut === 'échec').length,
+    total: conversations.length,
+    reponses: conversations.filter(c => c.a_repondu).length,
+    envoyes: allSentMessages.length,
+    recus: conversations.reduce((s, c) => s + c.nb_recus, 0),
+    ouverts: allSentMessages.filter(m => m.statut === 'ouvert' || m.statut === 'cliqué' || m.statut === 'répondu').length,
+    cliques: allSentMessages.filter(m => m.statut === 'cliqué').length,
   };
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
-      <p className="text-gray-400">Chargement des emails...</p>
+      <p className="text-gray-400">Chargement des conversations...</p>
     </div>
   );
 
+  // ── Vue détail d'une conversation ──────────────────────────────────────────
+  if (view === 'detail' && selectedConv) {
+    const unreadCount = selectedConv.messages.filter(m => m.direction === 'reçu' && !m.lu).length;
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => { setView('conversations'); setSelectedConv(null); fetchConversations(); }}
+          className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium text-sm"
+        >
+          ← Retour aux conversations
+        </button>
+
+        <div className="bg-white rounded-lg shadow-md p-5">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-gray-800">{selectedConv.nom || selectedConv.email}</h2>
+              <p className="text-sm text-gray-500">{selectedConv.email}</p>
+            </div>
+            <div className="flex gap-3 text-sm">
+              <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-medium">
+                📤 {selectedConv.nb_envoyes} envoyé(s)
+              </span>
+              <span className={`px-3 py-1 rounded-full font-medium ${selectedConv.nb_recus > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
+                📥 {selectedConv.nb_recus} réponse(s)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {selectedConv.messages.map((msg, i) => {
+            const isSent = msg.direction === 'envoyé';
+            return (
+              <div
+                key={msg.id || i}
+                className={`flex ${isSent ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className={`max-w-2xl w-full rounded-2xl shadow-sm p-5 ${
+                  isSent
+                    ? 'bg-blue-50 border border-blue-200'
+                    : 'bg-green-50 border border-green-200'
+                }`}>
+                  <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        isSent ? 'bg-blue-200 text-blue-800' : 'bg-green-200 text-green-800'
+                      }`}>
+                        {isSent ? '📤 Vous' : `📥 ${selectedConv.nom || selectedConv.email}`}
+                      </span>
+                      {!isSent && !msg.lu && (
+                        <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">Nouveau</span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-400">
+                      {msg.date_msg ? new Date(msg.date_msg).toLocaleString('fr-FR') : '—'}
+                    </span>
+                  </div>
+                  {msg.sujet && (
+                    <p className="text-sm font-semibold text-gray-700 mb-2">📋 {msg.sujet}</p>
+                  )}
+                  {isSent && msg.statut && (
+                    <div className="mb-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        msg.statut === 'ouvert' ? 'bg-green-100 text-green-700' :
+                        msg.statut === 'répondu' ? 'bg-yellow-100 text-yellow-700' :
+                        msg.statut === 'cliqué' ? 'bg-purple-100 text-purple-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {msg.statut === 'envoyé' ? '✉️ Envoyé' :
+                         msg.statut === 'ouvert' ? '👁️ Ouvert' :
+                         msg.statut === 'répondu' ? '↩️ Répondu' :
+                         msg.statut === 'cliqué' ? '🖱️ Cliqué' : msg.statut}
+                      </span>
+                      {msg.campagne_nom && (
+                        <span className="ml-2 text-xs text-gray-400">Campagne: {msg.campagne_nom}</span>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {(msg.contenu || '').slice(0, 1000)}{msg.contenu?.length > 1000 ? '…' : ''}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Vue liste des conversations ────────────────────────────────────────────
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-white rounded-lg shadow-md p-5">
-          <p className="text-sm text-gray-500">Total envoyés</p>
+          <p className="text-sm text-gray-500">Conversations</p>
           <p className="text-3xl font-bold text-gray-800 mt-1">{kpis.total}</p>
         </div>
         <div className="bg-white rounded-lg shadow-md p-5">
-          <p className="text-sm text-gray-500">En attente</p>
+          <p className="text-sm text-gray-500">Emails envoyés</p>
           <p className="text-3xl font-bold text-blue-600 mt-1">{kpis.envoyes}</p>
         </div>
         <div className="bg-white rounded-lg shadow-md p-5">
-          <p className="text-sm text-gray-500">Ouverts</p>
-          <p className="text-3xl font-bold text-green-600 mt-1">{kpis.ouverts}</p>
+          <p className="text-sm text-gray-500">👁️ Ouverts</p>
+          <p className="text-3xl font-bold text-orange-500 mt-1">{kpis.ouverts}</p>
+          <p className="text-xs text-gray-400 mt-1">{kpis.envoyes > 0 ? Math.round((kpis.ouverts / kpis.envoyes) * 100) : 0}% taux</p>
         </div>
         <div className="bg-white rounded-lg shadow-md p-5">
-          <p className="text-sm text-gray-500">Échecs</p>
-          <p className="text-3xl font-bold text-red-600 mt-1">{kpis.echecs}</p>
+          <p className="text-sm text-gray-500">↩️ Réponses</p>
+          <p className="text-3xl font-bold text-green-600 mt-1">{kpis.recus}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-md p-5">
+          <p className="text-sm text-gray-500">Taux réponse</p>
+          <p className="text-3xl font-bold text-purple-600 mt-1">
+            {kpis.total > 0 ? Math.round((kpis.reponses / kpis.total) * 100) : 0}%
+          </p>
         </div>
       </div>
 
+      {/* Barre de contrôle */}
       <div className="bg-white rounded-lg shadow-md p-4 flex gap-3 flex-wrap items-center">
         <input
           type="text"
-          placeholder="🔍 Rechercher par email ou sujet..."
+          placeholder="🔍 Rechercher par email ou nom..."
           value={recherche}
           onChange={e => setRecherche(e.target.value)}
           className="flex-1 min-w-48 p-2 border border-gray-300 rounded-lg text-sm"
@@ -695,63 +841,93 @@ const EmailsModule = () => {
           onChange={e => setFiltre(e.target.value)}
           className="p-2 border border-gray-300 rounded-lg text-sm"
         >
-          <option value="tous">Tous les statuts</option>
-          <option value="envoyé">Envoyé</option>
-          <option value="ouvert">Ouvert</option>
-          <option value="cliqué">Cliqué</option>
-          <option value="répondu">Répondu</option>
-          <option value="échec">Échec</option>
-          <option value="sauvegardé">Sauvegardé</option>
+          <option value="tous">Toutes les conversations</option>
+          <option value="repondu">Avec réponse</option>
+          <option value="envoye_seul">Sans réponse</option>
         </select>
         <button
-          onClick={fetchEmails}
+          onClick={fetchConversations}
           className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm text-gray-700"
         >
           🔄 Rafraîchir
         </button>
-        <span className="text-sm text-gray-500">{emailsFiltres.length} email(s)</span>
+        <button
+          onClick={syncIMAP}
+          disabled={syncing}
+          className={`px-4 py-2 rounded-lg text-sm text-white font-medium ${syncing ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+        >
+          {syncing ? '⏳ Sync...' : '📥 Sync IMAP'}
+        </button>
+        <span className="text-sm text-gray-500">{convsFiltrees.length} conversation(s)</span>
       </div>
 
+      {syncMsg && (
+        <div className={`px-4 py-3 rounded-lg text-sm font-medium ${syncMsg.startsWith('❌') ? 'bg-red-100 text-red-700 border border-red-300' : 'bg-green-100 text-green-700 border border-green-300'}`}>
+          {syncMsg}
+        </div>
+      )}
+
+      {/* Liste des conversations */}
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Destinataire</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Sujet</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Campagne</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Statut</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase">Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {emailsFiltres.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-gray-400">
-                  Aucun email trouvé
-                </td>
-              </tr>
-            ) : (
-              emailsFiltres.map((email, i) => {
-                const couleur = statutColors[email.statut] || { bg: 'bg-gray-100', text: 'text-gray-800' };
-                return (
-                  <tr key={email.id || i} className="border-b hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm text-blue-600">{email.email_destinataire}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700 max-w-xs truncate">{email.sujet || '—'}</td>
-                    <td className="px-6 py-4 text-sm text-gray-500">{email.campagne_nom || '—'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${couleur.bg} ${couleur.text}`}>
-                        {email.statut}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">
-                      {email.date_envoi ? new Date(email.date_envoi).toLocaleString('fr-FR') : '—'}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+        {convsFiltrees.length === 0 ? (
+          <div className="px-6 py-16 text-center text-gray-400">
+            <p className="text-4xl mb-3">📭</p>
+            <p className="font-medium">Aucune conversation trouvée</p>
+            <p className="text-sm mt-1">Envoyez des emails à vos prospects ou synchronisez votre boîte IMAP</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {convsFiltrees.map((conv, i) => {
+              const hasReply = conv.a_repondu;
+              const unread = conv.messages.filter(m => m.direction === 'reçu' && !m.lu).length;
+              const lastMsg = conv.messages[conv.messages.length - 1];
+              return (
+                <div
+                  key={conv.email}
+                  onClick={() => openConversation(conv)}
+                  className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 cursor-pointer transition"
+                >
+                  {/* Avatar */}
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm flex-shrink-0 ${hasReply ? 'bg-green-500' : 'bg-blue-500'}`}>
+                    {(conv.nom || conv.email)[0].toUpperCase()}
+                  </div>
+
+                  {/* Infos */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-gray-800 truncate">{conv.nom !== conv.email ? conv.nom : ''}</span>
+                      <span className="text-sm text-blue-600 truncate">{conv.email}</span>
+                      {unread > 0 && (
+                        <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">{unread}</span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-500 truncate mt-0.5">
+                      {lastMsg ? (lastMsg.sujet || lastMsg.contenu?.slice(0, 60) || '—') : '—'}
+                    </p>
+                  </div>
+
+                  {/* Badges + date */}
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <span className="text-xs text-gray-400">
+                      {conv.dernier_message ? new Date(conv.dernier_message).toLocaleDateString('fr-FR') : '—'}
+                    </span>
+                    <div className="flex gap-1 flex-wrap justify-end">
+                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">📤 {conv.nb_envoyes}</span>
+                      {(() => {
+                        const sentMsgs = conv.messages.filter(m => m.direction === 'envoyé');
+                        const hasOuvert = sentMsgs.some(m => m.statut === 'ouvert' || m.statut === 'répondu' || m.statut === 'cliqué');
+                        return hasOuvert ? <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">👁️ Ouvert</span> : null;
+                      })()}
+                      {hasReply && (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">↩️ {conv.nb_recus}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1505,7 +1681,7 @@ const CRM = () => {
       </div>
       <div className="flex-1 flex flex-col">
         <div className="bg-white shadow-sm border-b border-gray-200 px-8 py-6">
-          <h1 className="text-3xl font-bold text-gray-900">{currentModule === 'dashboard' ? 'Dashboard' : currentModule === 'contacts' ? 'Gestion des Contacts' : currentModule === 'scraping' ? 'Scraping de Prospects' : currentModule === 'opportunities' ? 'Pipeline de Vente' : currentModule === 'activities' ? 'Activités' : currentModule === 'campaigns' ? 'Campagnes Marketing' : currentModule === 'reports' ? 'Rapports & Analytics' : currentModule === 'outils' ? 'Outils & Actions' : currentModule === 'emails' ? 'Emails Envoyés' : 'Settings'}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{currentModule === 'dashboard' ? 'Dashboard' : currentModule === 'contacts' ? 'Gestion des Contacts' : currentModule === 'scraping' ? 'Scraping de Prospects' : currentModule === 'opportunities' ? 'Pipeline de Vente' : currentModule === 'activities' ? 'Activités' : currentModule === 'campaigns' ? 'Campagnes Marketing' : currentModule === 'reports' ? 'Rapports & Analytics' : currentModule === 'outils' ? 'Outils & Actions' : currentModule === 'emails' ? 'Conversations & Emails' : 'Settings'}</h1>
           <p className="text-gray-600 mt-1">Bienvenue dans votre CRM professionnel</p>
         </div>
         <div className="flex-1 overflow-auto p-8">{renderContent()}</div>

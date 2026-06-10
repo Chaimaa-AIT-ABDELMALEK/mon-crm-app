@@ -132,7 +132,7 @@ export default function Login({ onLoginSuccess }) {
             <span style={styles.globeIcon}>🌍</span>
           </div>
           <h1 style={styles.title}>PM Travel CRM</h1>
-          <p style={styles.subtitle}>Connexion créative</p>
+          
         </div>
         <form onSubmit={handleLogin}>
           <div style={styles.inputGroup}>
