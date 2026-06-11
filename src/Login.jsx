@@ -11,7 +11,6 @@ export default function Login({ onLoginSuccess }) {
   const [showHideEyes, setShowHideEyes] = useState(false);
   const canvasRef = useRef(null);
 
-  // Animation des lignes de vol (identique à avant)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -98,7 +97,8 @@ export default function Login({ onLoginSuccess }) {
         null,
         { params: { username, password } }
       );
-      localStorage.setItem('token', response.data.token);
+      // ✅ CORRIGÉ : access_token et non token
+      localStorage.setItem('token', response.data.access_token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
       onLoginSuccess(response.data.user);
     } catch (err) {
@@ -107,12 +107,10 @@ export default function Login({ onLoginSuccess }) {
     setLoading(false);
   };
 
-  // Gestionnaire pour afficher l’emoji quand on tape dans le mot de passe
   const handlePasswordChange = (e) => {
     setPassword(e.target.value);
     if (e.target.value.length > 0) {
       setShowHideEyes(true);
-      // Disparaît automatiquement 1 seconde après la fin de la frappe (optionnel)
       setTimeout(() => {
         if (password === e.target.value) setShowHideEyes(false);
       }, 1000);
@@ -132,7 +130,6 @@ export default function Login({ onLoginSuccess }) {
             <span style={styles.globeIcon}>🌍</span>
           </div>
           <h1 style={styles.title}>PM Travel CRM</h1>
-          
         </div>
         <form onSubmit={handleLogin}>
           <div style={styles.inputGroup}>
@@ -155,11 +152,8 @@ export default function Login({ onLoginSuccess }) {
                 style={styles.input}
                 required
               />
-              {/* Emoji qui cache ses yeux */}
               {showHideEyes && (
-                <span style={styles.emojiHide}>
-                  🙈
-                </span>
+                <span style={styles.emojiHide}>🙈</span>
               )}
             </div>
           </div>
@@ -257,11 +251,6 @@ const styles = {
     letterSpacing: '-0.5px',
     textShadow: '0 2px 10px rgba(0,0,0,0.3)',
   },
-  subtitle: {
-    fontSize: '14px',
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: '8px',
-  },
   inputGroup: {
     marginBottom: '20px',
   },
@@ -321,11 +310,9 @@ const styles = {
   },
 };
 
-// Injecter les animations globales
 const styleSheet = document.createElement('style');
 styleSheet.textContent = `
   @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
-
   @keyframes borderGlow {
     0% { opacity: 0.3; filter: blur(12px); }
     50% { opacity: 0.8; filter: blur(16px); }

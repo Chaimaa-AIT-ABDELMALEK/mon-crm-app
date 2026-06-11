@@ -393,9 +393,158 @@ const ActivitiesModule = ({ activities, newActivity, editingActivity, showActivi
 
 const CampaignsModule = ({ campaigns, newCampaign, editingCampaign, showCampaignForm, handleCampaignNameChange, handleCampaignTypeChange, handleCampaignStatusChange, handleCampaignContactsChange, handleCampaignSentChange, handleCampaignOpenedChange, handleAddCampaign, handleEditCampaign, handleDeleteCampaign, setShowCampaignForm, setEditingCampaign, setNewCampaign }) => (
   <div className="space-y-6">
-    <div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-gray-800">Campagnes Marketing</h2><button onClick={() => { setShowCampaignForm(true); setEditingCampaign(null); setNewCampaign({ name: '', type: 'Email', status: 'Planifiée', contacts: 0, sent: 0, opened: 0 }); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">+ Nouvelle Campagne</button></div>
-    {showCampaignForm && (<div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold mb-4">{editingCampaign ? 'Modifier la Campagne' : 'Nouvelle Campagne'}</h3><form onSubmit={handleAddCampaign} className="grid grid-cols-1 md:grid-cols-2 gap-4"><input type="text" placeholder="Nom de la campagne" value={newCampaign.name} onChange={handleCampaignNameChange} className="p-2 border border-gray-300 rounded-lg" required /><select value={newCampaign.type} onChange={handleCampaignTypeChange} className="p-2 border border-gray-300 rounded-lg"><option>Email</option><option>SMS</option><option>Réseaux sociaux</option><option>Téléphone</option></select><select value={newCampaign.status} onChange={handleCampaignStatusChange} className="p-2 border border-gray-300 rounded-lg"><option>Planifiée</option><option>En cours</option><option>Complétée</option></select><input type="number" placeholder="Contacts ciblés" value={newCampaign.contacts} onChange={handleCampaignContactsChange} className="p-2 border border-gray-300 rounded-lg" /><input type="number" placeholder="Envoyés" value={newCampaign.sent} onChange={handleCampaignSentChange} className="p-2 border border-gray-300 rounded-lg" /><input type="number" placeholder="Ouverts" value={newCampaign.opened} onChange={handleCampaignOpenedChange} className="p-2 border border-gray-300 rounded-lg" /><div className="md:col-span-2 flex gap-2"><button type="submit" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex-1">{editingCampaign ? 'Mettre à jour' : 'Ajouter'}</button><button type="button" onClick={() => { setShowCampaignForm(false); setEditingCampaign(null); }} className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg flex-1">Annuler</button></div></form></div>)}
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">{campaigns.length === 0 && <div className="bg-white rounded-lg shadow-md p-8 text-center text-gray-400 italic lg:col-span-2">Aucune campagne. Créez-en une !</div>}{campaigns.map((campaign) => { const openRate = campaign.sent > 0 ? Math.round((campaign.opened / campaign.sent) * 100) : 0; return (<div key={campaign.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition"><div className="flex justify-between items-start mb-4"><div><h3 className="text-lg font-semibold text-gray-800">{campaign.name}</h3><p className="text-sm text-gray-600">Type: {campaign.type}</p></div><span className={`px-3 py-1 rounded-full text-xs font-medium ${campaign.status === 'Complétée' ? 'bg-green-100 text-green-800' : campaign.status === 'En cours' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>{campaign.status}</span></div><div className="grid grid-cols-3 gap-4 mb-4"><div><p className="text-2xl font-bold text-gray-800">{campaign.contacts}</p><p className="text-xs text-gray-500">Contacts ciblés</p></div><div><p className="text-2xl font-bold text-blue-600">{campaign.sent}</p><p className="text-xs text-gray-500">Envoyés</p></div><div><p className="text-2xl font-bold text-green-600">{openRate}%</p><p className="text-xs text-gray-500">Taux d'ouverture</p></div></div><div className="w-full bg-gray-200 rounded-full h-2 mb-4"><div className="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full" style={{ width: `${openRate}%` }}></div></div><div className="flex gap-2"><button onClick={() => handleEditCampaign(campaign)} className="text-blue-600 hover:text-blue-800 font-medium text-sm">Modifier</button><button onClick={() => handleDeleteCampaign(campaign.id)} className="text-red-600 hover:text-red-800 font-medium text-sm">Supprimer</button></div></div>);})}</div>
+    <div className="flex justify-between items-center flex-wrap gap-3">
+      <h2 className="text-2xl font-bold text-gray-800">Campagnes Marketing</h2>
+      <button 
+        onClick={() => { 
+          setShowCampaignForm(true); 
+          setEditingCampaign(null); 
+          setNewCampaign({ name: '', type: 'Email', status: 'Planifiée', contacts: 0, sent: 0, opened: 0 }); 
+        }} 
+        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition font-medium"
+      >
+        + Nouvelle Campagne
+      </button>
+    </div>
+
+    {/* Formulaire de création / édition de Campagne */}
+    {showCampaignForm && (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-semibold mb-4">{editingCampaign ? 'Modifier la Campagne' : 'Nouvelle Campagne'}</h3>
+        <form onSubmit={handleAddCampaign} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input 
+            type="text" 
+            placeholder="Nom de la campagne" 
+            value={newCampaign.name} 
+            onChange={handleCampaignNameChange} 
+            className="p-2 border border-gray-300 rounded-lg" 
+            required 
+          />
+          <select value={newCampaign.type} onChange={handleCampaignTypeChange} className="p-2 border border-gray-300 rounded-lg">
+            <option>Email</option>
+            <option>SMS</option>
+            <option>Réseaux sociaux</option>
+            <option>Téléphone</option>
+          </select>
+          <select value={newCampaign.status} onChange={handleCampaignStatusChange} className="p-2 border border-gray-300 rounded-lg">
+            <option>Planifiée</option>
+            <option>En cours</option>
+            <option>Complétée</option>
+          </select>
+          <input 
+            type="number" 
+            placeholder="Contacts ciblés" 
+            value={newCampaign.contacts} 
+            onChange={handleCampaignContactsChange} 
+            className="p-2 border border-gray-300 rounded-lg" 
+          />
+          <input 
+            type="number" 
+            placeholder="Envoyés" 
+            value={newCampaign.sent} 
+            onChange={handleCampaignSentChange} 
+            className="p-2 border border-gray-300 rounded-lg" 
+          />
+          <input 
+            type="number" 
+            placeholder="Ouverts" 
+            value={newCampaign.opened} 
+            onChange={handleCampaignOpenedChange} 
+            className="p-2 border border-gray-300 rounded-lg" 
+          />
+          <div className="md:col-span-2 flex gap-2">
+            <button type="submit" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex-1">
+              {editingCampaign ? 'Mettre à jour' : 'Ajouter'}
+            </button>
+            <button type="button" onClick={() => { setShowCampaignForm(false); setEditingCampaign(null); }} className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg flex-1">
+              Annuler
+            </button>
+          </div>
+        </form>
+      </div>
+    )}
+
+    {/* Liste des campagnes actives */}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {campaigns.length === 0 && (
+        <div className="md:col-span-2 bg-white rounded-lg shadow-md p-8 text-center text-gray-400 italic">
+          Aucune campagne enregistrée. Créez votre première campagne marketing dès maintenant !
+        </div>
+      )}
+      {campaigns.map((campaign) => {
+        // Calcul du taux d'ouverture (évite la division par zéro)
+        const openRate = campaign.sent > 0 ? Math.round((campaign.opened / campaign.sent) * 100) : 0;
+
+        return (
+          <div key={campaign.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider ${
+                  campaign.type === 'Email' ? 'bg-blue-100 text-blue-800' :
+                  campaign.type === 'SMS' ? 'bg-green-100 text-green-800' :
+                  campaign.type === 'Réseaux sociaux' ? 'bg-purple-100 text-purple-800' : 'bg-orange-100 text-orange-800'
+                }`}>
+                  {campaign.type === 'Email' ? '📧 Email' : campaign.type === 'SMS' ? '📱 SMS' : campaign.type === 'Réseaux sociaux' ? '✨ Social' : '📞 Téléphone'}
+                </span>
+                <h3 className="text-xl font-bold text-gray-800 mt-2">{campaign.name}</h3>
+              </div>
+              <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                campaign.status === 'Complétée' ? 'bg-green-100 text-green-800' :
+                campaign.status === 'En cours' ? 'bg-blue-100 text-blue-800 animate-pulse' : 'bg-gray-100 text-gray-800'
+              }`}>
+                {campaign.status}
+              </span>
+            </div>
+
+            {/* Statistiques de performance de la campagne */}
+            <div className="grid grid-cols-3 gap-2 text-center bg-gray-50 p-3 rounded-lg mb-4">
+              <div>
+                <p className="text-xs text-gray-500 font-medium uppercase">Ciblés</p>
+                <p className="text-lg font-bold text-gray-700">{campaign.contacts || 0}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 font-medium uppercase">Envoyés</p>
+                <p className="text-lg font-bold text-blue-600">{campaign.sent || 0}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 font-medium uppercase">Ouverts</p>
+                <p className="text-lg font-bold text-green-600">{campaign.opened || 0}</p>
+              </div>
+            </div>
+
+            {/* Barre de progression de conversion / taux d'ouverture */}
+            <div className="mb-4">
+              <div className="flex justify-between text-xs font-medium text-gray-600 mb-1">
+                <span>Taux d'ouverture</span>
+                <span className="font-bold text-blue-600">{openRate}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-gradient-to-r from-blue-500 to-green-500 h-2 rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min(openRate, 100)}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Boutons d'action */}
+            <div className="flex justify-end gap-3 border-t pt-3">
+              <button 
+                onClick={() => handleEditCampaign(campaign)} 
+                className="text-blue-600 hover:text-blue-800 font-bold text-sm"
+              >
+                Modifier
+              </button>
+              <button 
+                onClick={() => handleDeleteCampaign(campaign.id)} 
+                className="text-red-600 hover:text-red-800 font-bold text-sm"
+              >
+                Supprimer
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   </div>
 );
 
@@ -1690,4 +1839,93 @@ const CRM = () => {
   );
 };
 
-export default CRM;
+// ===== COMPOSANT LOGIN =====
+const Login = ({ onLogin }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const res = await axios.post(
+        `http://127.0.0.1:8000/auth/login?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+      );
+      localStorage.setItem('token', res.data.access_token);
+      onLogin();
+    } catch (err) {
+      setError('❌ Identifiants incorrects');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center">
+      <div className="bg-white rounded-2xl shadow-2xl p-10 w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">CRM Pro</h1>
+          <p className="text-gray-500 mt-2">PM Travel Agency</p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nom d'utilisateur</label>
+            <input
+              type="text"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+              placeholder="admin"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-300 text-red-700 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={loading}
+            className={`w-full py-3 rounded-lg text-white font-semibold transition ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+          >
+            {loading ? '⏳ Connexion...' : 'Se connecter'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// ===== WRAPPER PRINCIPAL =====
+// Remplace "export default CRM;" par ceci à la fin de ton fichier :
+
+const App = () => {
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
+
+  const handleLogin = () => setIsLoggedIn(true);
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setIsLoggedIn(false);
+  };
+
+  if (!isLoggedIn) return <Login onLogin={handleLogin} />;
+  return <CRM onLogout={handleLogout} />;
+};
+
+export default App;
