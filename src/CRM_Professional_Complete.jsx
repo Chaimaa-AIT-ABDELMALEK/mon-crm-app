@@ -750,7 +750,7 @@ const SettingsModule = ({ smtpConfig, imapConfig, apisConfig, settingsMessage, h
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">🔍 API Scraping</h3><div className="space-y-4"><div><label className="text-sm text-gray-600 block mb-2">Google Places API</label><input type="password" placeholder="API Key" value={apisConfig.googlePlaces} onChange={handleApisGoogleChange} className="w-full p-2 border border-gray-300 rounded-lg" /></div><button onClick={handleSaveApis} className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">💾 Save APIs</button></div></div>
       <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">🤖 OpenAI API</h3><div className="space-y-4"><div><label className="text-sm text-gray-600 block mb-2">API Key</label><input type="password" placeholder="sk-proj-..." value={apisConfig.openai} onChange={handleApisOpenaiChange} className="w-full p-2 border border-gray-300 rounded-lg" /></div><button onClick={handleSaveOpenaiApi} className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg">💾 Save OpenAI</button></div></div>
-      <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">📧 Email SMTP</h3><div className="space-y-4"><div><label className="text-sm text-gray-600 block mb-2">Provider</label><select value={smtpConfig.provider} onChange={handleSmtpProviderChange} className="w-full p-2 border border-gray-300 rounded-lg"><option value="sendgrid">SendGrid</option><option value="gmail">Gmail</option><option value="hostinger">Hostinger</option><option value="custom">Custom</option></select></div><input type="email" placeholder="contact@pmtravel.ma" value={smtpConfig.email} onChange={handleSmtpEmailChange} className="w-full p-2 border border-gray-300 rounded-lg" /><input type="password" placeholder="•••••••" value={smtpConfig.password} onChange={handleSmtpPasswordChange} className="w-full p-2 border border-gray-300 rounded-lg" /><div className="flex gap-2"><button onClick={handleTestSmtp} className="w-full bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg">🧪 Test</button></div></div></div>
+      <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">📧 Email SMTP</h3><div className="space-y-4"><div><label className="text-sm text-gray-600 block mb-2">Provider</label><select value={smtpConfig.provider} onChange={handleSmtpProviderChange} className="w-full p-2 border border-gray-300 rounded-lg"><option value="sendgrid">SendGrid</option><option value="gmail">Gmail</option><option value="hostinger">Hostinger</option><option value="custom">Custom</option></select></div><input type="email" placeholder="travelpm27@gmail.com" value={smtpConfig.email} onChange={handleSmtpEmailChange} className="w-full p-2 border border-gray-300 rounded-lg" /><input type="password" placeholder="•••••••" value={smtpConfig.password} onChange={handleSmtpPasswordChange} className="w-full p-2 border border-gray-300 rounded-lg" /><div className="flex gap-2"><button onClick={handleTestSmtp} className="w-full bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg">🧪 Test</button></div></div></div>
       <div className="bg-white rounded-lg shadow-md p-6"><h3 className="text-lg font-semibold text-gray-800 mb-4">📨 Email IMAP</h3><div className="space-y-4"><select value={imapConfig.provider} onChange={handleImapProviderChange} className="w-full p-2 border border-gray-300 rounded-lg"><option value="gmail">Gmail</option><option value="hostinger">Hostinger</option></select><input type="email" placeholder="contact@pmtravel.ma" value={imapConfig.email} onChange={handleImapEmailChange} className="w-full p-2 border border-gray-300 rounded-lg" /><input type="password" placeholder="•••••••" value={imapConfig.password} onChange={handleImapPasswordChange} className="w-full p-2 border border-gray-300 rounded-lg" /><div className="flex gap-2"><button onClick={handleSyncImap} className="flex-1 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg">🔄 Sync</button><button onClick={handleSaveImap} className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">💾 Save</button></div></div></div>
     </div>
   </div>
@@ -1399,7 +1399,6 @@ const CRM = () => {
   const [contacts, setContacts] = useState([]);
   const [opportunities, setOpportunities] = useState([]);
   const [activities, setActivities] = useState([]);
-  const [campaigns, setCampaigns] = useState([]);
   const [scrapingHistory, setScrapingHistory] = useState([]);
   const [scrapJob, setScrapJob] = useState(null);
   const [lastProspects, setLastProspects] = useState([]);
@@ -1423,9 +1422,6 @@ const CRM = () => {
   const [editingActivity, setEditingActivity] = useState(null);
   const [newActivity, setNewActivity] = useState({ type: 'Appel', description: '', contact: '', date: '', result: 'En attente' });
 
-  const [showCampaignForm, setShowCampaignForm] = useState(false);
-  const [editingCampaign, setEditingCampaign] = useState(null);
-  const [newCampaign, setNewCampaign] = useState({ name: '', type: 'Email', status: 'Planifiée', contacts: 0, sent: 0, opened: 0 });
 
   const [smtpConfig, setSmtpConfig] = useState({ provider: 'gmail', email: '', password: '' });
   const [imapConfig, setImapConfig] = useState({ provider: 'gmail', email: '', password: '' });
@@ -1459,12 +1455,6 @@ const CRM = () => {
   const handleActivityDateChange = useCallback((e) => setNewActivity(prev => ({...prev, date: e.target.value})), []);
   const handleActivityResultChange = useCallback((e) => setNewActivity(prev => ({...prev, result: e.target.value})), []);
 
-  const handleCampaignNameChange = useCallback((e) => setNewCampaign(prev => ({...prev, name: e.target.value})), []);
-  const handleCampaignTypeChange = useCallback((e) => setNewCampaign(prev => ({...prev, type: e.target.value})), []);
-  const handleCampaignStatusChange = useCallback((e) => setNewCampaign(prev => ({...prev, status: e.target.value})), []);
-  const handleCampaignContactsChange = useCallback((e) => setNewCampaign(prev => ({...prev, contacts: e.target.value})), []);
-  const handleCampaignSentChange = useCallback((e) => setNewCampaign(prev => ({...prev, sent: e.target.value})), []);
-  const handleCampaignOpenedChange = useCallback((e) => setNewCampaign(prev => ({...prev, opened: e.target.value})), []);
 
   const handleSmtpProviderChange = useCallback((e) => setSmtpConfig(prev => ({...prev, provider: e.target.value})), []);
   const handleSmtpEmailChange = useCallback((e) => setSmtpConfig(prev => ({...prev, email: e.target.value})), []);
@@ -1505,7 +1495,6 @@ const CRM = () => {
     revenueExpected: opportunities.reduce((acc, o) => acc + Number(o.amount || 0), 0),
     conversionRate: opportunities.length ? Math.round((opportunities.filter(o => o.probability >= 75).length / opportunities.length) * 100) : 0,
     tasksThisWeek: activities.filter(a => a.result === 'En attente').length,
-    activeCampaigns: campaigns.filter(c => c.status !== 'Complétée').length,
   };
 
   useEffect(() => { 
@@ -1628,9 +1617,6 @@ const CRM = () => {
   const handleAddActivity = (e) => { e.preventDefault(); if (editingActivity) { setActivities(activities.map(a => a.id === editingActivity.id ? { ...newActivity, id: editingActivity.id } : a)); setEditingActivity(null); } else { setActivities([...activities, { ...newActivity, id: Date.now() }]); } setNewActivity({ type: 'Appel', description: '', contact: '', date: '', result: 'En attente' }); setShowActivityForm(false); };
   const handleEditActivity = (act) => { setEditingActivity(act); setNewActivity(act); setShowActivityForm(true); };
   const handleDeleteActivity = (id) => setActivities(activities.filter(a => a.id !== id));
-  const handleAddCampaign = (e) => { e.preventDefault(); if (editingCampaign) { setCampaigns(campaigns.map(c => c.id === editingCampaign.id ? { ...newCampaign, id: editingCampaign.id } : c)); setEditingCampaign(null); } else { setCampaigns([...campaigns, { ...newCampaign, id: Date.now(), contacts: Number(newCampaign.contacts), sent: Number(newCampaign.sent), opened: Number(newCampaign.opened) }]); } setNewCampaign({ name: '', type: 'Email', status: 'Planifiée', contacts: 0, sent: 0, opened: 0 }); setShowCampaignForm(false); };
-  const handleEditCampaign = (camp) => { setEditingCampaign(camp); setNewCampaign(camp); setShowCampaignForm(true); };
-  const handleDeleteCampaign = (id) => setCampaigns(campaigns.filter(c => c.id !== id));
 
   const handleSaveSmtp = async () => {
     try {
@@ -1791,7 +1777,6 @@ const CRM = () => {
       case 'contacts': return <ContactsModule contacts={contacts} setContacts={setContacts} newContact={newContact} editingContact={editingContact} showContactForm={showContactForm} handleContactNameChange={handleContactNameChange} handleContactEmailChange={handleContactEmailChange} handleContactPhoneChange={handleContactPhoneChange} handleContactCityChange={handleContactCityChange} handleContactSecteurChange={handleContactSecteurChange} handleContactStatusChange={handleContactStatusChange} handleAddContact={handleAddContact} handleEditContact={handleEditContact} handleDeleteContact={handleDeleteContact} setShowContactForm={setShowContactForm} setEditingContact={setEditingContact} setNewContact={setNewContact} />;
       case 'opportunities': return <OpportunitiesModule opportunities={opportunities} newOpportunity={newOpportunity} editingOpportunity={editingOpportunity} showOpportunityForm={showOpportunityForm} handleOpportunityTitleChange={handleOpportunityTitleChange} handleOpportunityCompanyChange={handleOpportunityCompanyChange} handleOpportunityAmountChange={handleOpportunityAmountChange} handleOpportunityExpectedCloseChange={handleOpportunityExpectedCloseChange} handleOpportunityStageChange={handleOpportunityStageChange} handleOpportunityProbabilityChange={handleOpportunityProbabilityChange} handleAddOpportunity={handleAddOpportunity} handleEditOpportunity={handleEditOpportunity} handleDeleteOpportunity={handleDeleteOpportunity} setShowOpportunityForm={setShowOpportunityForm} setEditingOpportunity={setEditingOpportunity} setNewOpportunity={setNewOpportunity} />;
       case 'activities': return <ActivitiesModule activities={activities} newActivity={newActivity} editingActivity={editingActivity} showActivityForm={showActivityForm} handleActivityTypeChange={handleActivityTypeChange} handleActivityContactChange={handleActivityContactChange} handleActivityDescriptionChange={handleActivityDescriptionChange} handleActivityDateChange={handleActivityDateChange} handleActivityResultChange={handleActivityResultChange} handleAddActivity={handleAddActivity} handleEditActivity={handleEditActivity} handleDeleteActivity={handleDeleteActivity} setShowActivityForm={setShowActivityForm} setEditingActivity={setEditingActivity} setNewActivity={setNewActivity} />;
-      case 'campaigns': return <CampaignsModule campaigns={campaigns} newCampaign={newCampaign} editingCampaign={editingCampaign} showCampaignForm={showCampaignForm} handleCampaignNameChange={handleCampaignNameChange} handleCampaignTypeChange={handleCampaignTypeChange} handleCampaignStatusChange={handleCampaignStatusChange} handleCampaignContactsChange={handleCampaignContactsChange} handleCampaignSentChange={handleCampaignSentChange} handleCampaignOpenedChange={handleCampaignOpenedChange} handleAddCampaign={handleAddCampaign} handleEditCampaign={handleEditCampaign} handleDeleteCampaign={handleDeleteCampaign} setShowCampaignForm={setShowCampaignForm} setEditingCampaign={setEditingCampaign} setNewCampaign={setNewCampaign} />;
       case 'reports': return <ReportsModule opportunities={opportunities} contacts={contacts} />;
       case 'scraping': return <ScrapingModule scrapingHistory={scrapingHistory} fetchScrapingHistory={fetchScrapingHistory} scrapJob={scrapJob} lastProspects={lastProspects} setLastProspects={setLastProspects} />;
       case 'outils': return <OutilsModule apisConfig={apisConfig} smtpConfig={smtpConfig} setApisConfig={setApisConfig} />;
@@ -1815,7 +1800,6 @@ const CRM = () => {
             { id: 'scraping', label: 'Scraping', icon: '🕷️' },
             { id: 'opportunities', label: 'Opportunités', icon: '🤝' },
             { id: 'activities', label: 'Activités', icon: '📋' },
-            { id: 'campaigns', label: 'Campagnes', icon: '📢' },
             { id: 'reports', label: 'Rapports', icon: '📈' },
             { id: 'outils', label: 'Outils', icon: '🛠️' },
             { id: 'emails', label: 'Emails', icon: '📨' },
