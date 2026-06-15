@@ -176,20 +176,23 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
   };
 
   const getFilteredContacts = () => {
-    return contacts.filter(contact => {
-      if (searchText) {
-        const search = searchText.toLowerCase();
-        if (!contact.name.toLowerCase().includes(search) && !contact.email.toLowerCase().includes(search)) return false;
-      }
-      if (filterCity && contact.city !== filterCity) return false;
-      if (filterSecteur) {
-        const contactSecteurNorm = (contact.secteur || '').toLowerCase();
-        const filterSecteurNorm = filterSecteur.toLowerCase();
-        if (contactSecteurNorm !== filterSecteurNorm) return false;
-      }
-      return true;
-    });
-  };
+  return contacts.filter(contact => {
+    if (searchText) {
+      const search = searchText.toLowerCase();
+      if (!contact.name.toLowerCase().includes(search) &&
+          !contact.email.toLowerCase().includes(search) &&
+          !(contact.source || '').toLowerCase().includes(search)) return false;
+    }
+    if (filterCity && contact.city !== filterCity) return false;
+    if (filterSecteur) {
+      const contactSecteurNorm = (contact.secteur || '').toLowerCase();
+      const filterSecteurNorm = filterSecteur.toLowerCase();
+      if (contactSecteurNorm !== filterSecteurNorm) return false;
+    }
+    // Ajouter éventuellement un filtre score minimum
+    return true;
+  });
+};
 
   const filteredContacts = getFilteredContacts();
   const availableCities = [...new Set(contacts.map(c => c.city).filter(Boolean))].sort();
@@ -322,52 +325,73 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
         <div className="px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b"><h3 className="font-bold text-gray-800">{hasActiveFilters ? `🔎 ${filteredContacts.length} contact${filteredContacts.length !== 1 ? 's' : ''}` : `📋 ${contacts.length} contact${contacts.length !== 1 ? 's' : ''} au total`}</h3></div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-100 border-b">
-              <tr>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">
-                  <input
-                    type="checkbox"
-                    onChange={selectAll}
-                    checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0}
-                  />
-                </th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Nom</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Email</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Téléphone</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">🏢 SECTEUR</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Ville</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Statut</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredContacts.length === 0 ? (
-                <tr><td colSpan={8} className="px-6 py-12 text-center"><p className="text-gray-400 text-lg">{contacts.length === 0 ? '😐 Aucun contact. Lancez le scraping!' : '😕 Aucun contact ne correspond à vos critères'}</p></td></tr>
-              ) : (
-                filteredContacts.map((contact) => {
-                  const secteurInfo = getSecteurInfo(contact.secteur);
-                  return (
-                    <tr key={contact.id} className="border-b hover:bg-gray-50 transition">
-                      <td className="px-6 py-4">
-                        <input
-                          type="checkbox"
-                          checked={selectedContacts.includes(contact.id)}
-                          onChange={() => toggleSelect(contact.id)}
-                        />
-                      </td>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-800">{contact.name}</td>
-                      <td className="px-6 py-4 text-sm text-blue-600">{contact.email}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{contact.phone || '—'}</td>
-                      <td className="px-6 py-4"><div className={`px-4 py-3 rounded-lg text-sm font-bold inline-flex items-center gap-2 ${secteurInfo.badge} border-2 ${secteurInfo.border}`}><span className="text-xl">{secteurInfo.icon}</span><span>{secteurInfo.name}</span></div></td>
-                      <td className="px-6 py-4 text-sm text-gray-700 font-medium">{contact.city}</td>
-                      <td className="px-6 py-4 text-sm"><span className={`px-3 py-1 rounded-full text-xs font-bold ${contact.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{contact.status === 'Active' ? '🟢 Actif' : contact.status}</span></td>
-                      <td className="px-6 py-4 text-sm space-x-3"><button onClick={() => handleEditContact(contact)} className="text-blue-600 hover:text-blue-800 font-bold">Modifier</button><button onClick={() => handleDeleteContact(contact.id)} className="text-red-600 hover:text-red-800 font-bold">Supprimer</button></td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+  <thead className="bg-gray-100 border-b">
+    <tr>
+      <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">
+        <input type="checkbox" onChange={selectAll} checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0} />
+      </th>
+      <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Nom</th>
+      <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Email</th>
+      <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Téléphone</th>
+      <th className="px-6 py-4 text-left text-sm font-bold text-gray-700"> SECTEUR</th>
+      <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Ville</th>
+      <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Score</th>     {/* nouvelle colonne */}
+      <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Source</th>    {/* nouvelle colonne */}
+      <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Statut</th>
+      <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {filteredContacts.map((contact) => {
+      const secteurInfo = getSecteurInfo(contact.secteur);
+      return (
+        <tr key={contact.id} className="border-b hover:bg-gray-50 transition">
+          <td className="px-6 py-4">
+            <input type="checkbox" checked={selectedContacts.includes(contact.id)} onChange={() => toggleSelect(contact.id)} />
+          </td>
+          <td className="px-6 py-4 text-sm font-medium text-gray-800">{contact.name}</td>
+          <td className="px-6 py-4 text-sm text-blue-600">{contact.email}</td>
+          <td className="px-6 py-4 text-sm text-gray-600">{contact.phone || '—'}</td>
+          <td className="px-6 py-4">
+            <div className={`px-4 py-3 rounded-lg text-sm font-bold inline-flex items-center gap-2 ${secteurInfo.badge} border-2 ${secteurInfo.border}`}>
+              <span className="text-xl">{secteurInfo.icon}</span>
+              <span>{secteurInfo.name}</span>
+            </div>
+          </td>
+          <td className="px-6 py-4 text-sm text-gray-700 font-medium">{contact.city}</td>
+          {/* Score avec badge coloré selon la valeur */}
+<td className="px-6 py-4">
+  <span className={`
+    inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold
+    ${contact.score >= 90 ? 'bg-green-100 text-green-800' :
+      contact.score >= 70 ? 'bg-yellow-100 text-yellow-800' :
+      contact.score >= 50 ? 'bg-orange-100 text-orange-800' :
+      'bg-gray-100 text-gray-600'}
+  `}>
+    {contact.score !== undefined && contact.score !== null ? contact.score : '—'}
+  </span>
+</td>
+
+{/* Source avec badge stylé et icône */}
+<td className="px-6 py-4">
+  <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-medium border border-blue-200">
+    <span>🗺️</span> {contact.source || '—'}
+  </span>
+</td>
+          <td className="px-6 py-4 text-sm">
+            <span className={`px-3 py-1 rounded-full text-xs font-bold ${contact.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+              {contact.status === 'Active' ? '🟢 Actif' : contact.status}
+            </span>
+          </td>
+          <td className="px-6 py-4 text-sm space-x-3">
+            <button onClick={() => handleEditContact(contact)} className="text-blue-600 hover:text-blue-800 font-bold">Modifier</button>
+            <button onClick={() => handleDeleteContact(contact.id)} className="text-red-600 hover:text-red-800 font-bold">Supprimer</button>
+          </td>
+        </tr>
+      );
+    })}
+  </tbody>
+</table>
         </div>
       </div>
     </div>
@@ -1503,20 +1527,24 @@ const CRM = () => {
   }, [fetchApisFromBackend]);
 
   const fetchContacts = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const res = await axios.get(`${API_URL}/prospects`, { headers: { 'Authorization': `Bearer ${token}` } });
-      setContacts(res.data.map(p => ({
-        id: p.id,
-        name: p.nom,
-        email: p.email,
-        phone: p.telephone,
-        city: p.ville,
-        secteur: p.secteur || '',
-        status: p.statut || p.status || "Active"
-      })));
-    } catch (err) { console.error("Erreur fetch:", err); }
-  };
+  try {
+    const token = localStorage.getItem('token');
+    const res = await axios.get(`${API_URL}/prospects`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    setContacts(res.data.map(p => ({
+      id: p.id,
+      name: p.nom,
+      email: p.email,
+      phone: p.telephone,
+      city: p.ville,
+      secteur: p.secteur || '',
+      status: p.statut || p.status || "Active",
+      score: p.score || 0,            // ← ajout
+      source: p.source || ''          // ← ajout
+    })));
+  } catch (err) { console.error("Erreur fetch:", err); }
+};
 
   useEffect(() => {
     let wasRunning = false;
