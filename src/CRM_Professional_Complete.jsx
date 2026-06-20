@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { 
   // Dashboard
@@ -24,7 +24,7 @@ import {
   Package, Hotel, Compass, Smile, ChevronLeft, ChevronRight,
   MailOpen, MousePointer, ArrowLeft, Inbox as InboxIcon,
   FlaskConical, Save, Wifi, WifiOff, Plug, Calendar,
-  Sparkles, Image, FileText, List, RotateCcw, ArrowUpDown,
+  Sparkles, Image, FileText, RotateCcw, ArrowUpDown,
   CircleAlert, Info, CircleCheck, Slash,
   // Imports supplémentaires (UNIQUEMENT CEUX QUI MANQUENT)
   Building,      // Hôtel - PAS encore importé
@@ -40,9 +40,67 @@ import {
   User,          // Ligne 2270
   Circle         // Pour le statut Actif
 } from 'lucide-react';
+// ===== ERROR BOUNDARY =====
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
 
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 text-center text-red-500">
+          <AlertTriangle className="w-12 h-12 mx-auto mb-3 text-red-500" />
+          <p className="font-medium">Une erreur est survenue dans la liste des contacts</p>
+          <p className="text-sm mt-1 text-gray-600">Veuillez rafraîchir la page</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 const API_URL = "http://127.0.0.1:8000";
-
+const ESTABLISHMENT_TYPES = {
+    'hotel': {
+      name: 'Hôtel',
+      icon: Building,
+      badge: 'bg-blue-100 text-blue-800',
+      border: 'border-blue-300'
+    },
+    'riad': {
+      name: 'Riad',
+      icon: Home,
+      badge: 'bg-amber-100 text-amber-800',
+      border: 'border-amber-300'
+    },
+    'transport touristique': {
+      name: 'Transport touristique',
+      icon: Bus,
+      badge: 'bg-green-100 text-green-800',
+      border: 'border-green-300'
+    },
+    'agence de voyage': {
+      name: 'Agence de voyage',
+      icon: Plane,
+      badge: 'bg-purple-100 text-purple-800',
+      border: 'border-purple-300'
+    },
+    'tour operator': {
+      name: 'Tour Operator',
+      icon: Backpack,
+      badge: 'bg-orange-100 text-orange-800',
+      border: 'border-orange-300'
+    }
+  };
 // ===== COMPOSANT SCRAPING STATUS CARD =====
 const ScrapingStatusCard = ({ title, description, isRunning, found, skipped, statusMsg, statusKind, recent, onLaunch, onCancel, isDisabled, buttonLabel }) => (
   <div className="bg-white rounded-lg shadow-md p-6">
@@ -114,7 +172,8 @@ const ScrapingStatusCard = ({ title, description, isRunning, found, skipped, sta
       </div>
     )}
 
-    {recent && recent.length > 0 && (
+    {/* ⭐ CORRECTION : Vérifier que recent est un tableau et a des éléments */}
+    {recent && Array.isArray(recent) && recent.length > 0 && (
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
         <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
           <Inbox className="w-4 h-4" />
@@ -123,9 +182,9 @@ const ScrapingStatusCard = ({ title, description, isRunning, found, skipped, sta
         <div className="space-y-2 max-h-64 overflow-y-auto">
           {recent.map((p, i) => (
             <div key={i} className="text-sm bg-white p-2 rounded border border-gray-200">
-              <p className="font-medium text-gray-800">{p.nom || p.name}</p>
-              {(p.email) && <p className="text-gray-600 flex items-center gap-1"><Mail className="w-3 h-3" /> {p.email}</p>}
-              <p className="text-gray-500 text-xs">{p.ville || p.city}</p>
+              <p className="font-medium text-gray-800">{p?.nom || p?.name || '—'}</p>
+              {p?.email && <p className="text-gray-600 flex items-center gap-1"><Mail className="w-3 h-3" /> {p.email}</p>}
+              <p className="text-gray-500 text-xs">{p?.ville || p?.city || '—'}</p>
             </div>
           ))}
         </div>
@@ -205,65 +264,20 @@ const ChartCard = ({ title, data, type }) => (
 );
 
 const ContactsModule = ({ contacts, setContacts, newContact, editingContact, showContactForm, handleContactNameChange, handleContactEmailChange, handleContactPhoneChange, handleContactCityChange, handleContactSecteurChange, handleContactStatusChange, handleAddContact, handleEditContact, handleDeleteContact, setShowContactForm, setEditingContact, setNewContact }) => {
+  // ⭐ PROTECTION : contacts doit toujours être un tableau
+  const safeContacts = Array.isArray(contacts) ? contacts : [];
+  
   const [searchText, setSearchText] = useState('');
   const [filterCity, setFilterCity] = useState('');
   const [filterSecteur, setFilterSecteur] = useState('');
   const [selectedContacts, setSelectedContacts] = useState([]);
+  
+  // ⭐ PAGINATION
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 50;
 
-  // TYPES D'ÉTABLISSEMENT
-  const ESTABLISHMENT_TYPES = {
-    'hotel': {
-      name: 'Hôtel',
-      icon: Building,
-      badge: 'bg-blue-100 text-blue-800',
-      border: 'border-blue-300'
-    },
-    'riad': {
-      name: 'Riad',
-      icon: Home,
-      badge: 'bg-amber-100 text-amber-800',
-      border: 'border-amber-300'
-    },
-    'transport touristique': {
-      name: 'Transport touristique',
-      icon: Bus,
-      badge: 'bg-green-100 text-green-800',
-      border: 'border-green-300'
-    },
-    'agence de voyage': {
-      name: 'Agence de voyage',
-      icon: Plane,
-      badge: 'bg-purple-100 text-purple-800',
-      border: 'border-purple-300'
-    },
-    'tour operator': {
-      name: 'Tour Operator',
-      icon: Backpack,
-      badge: 'bg-orange-100 text-orange-800',
-      border: 'border-orange-300'
-    }
-  };
-
-  const detectTypeFromName = (name) => {
-    const lowerName = name.toLowerCase();
-    if (lowerName.includes('riad')) return 'riad';
-    if (lowerName.includes('hotel') || lowerName.includes('hilton') || lowerName.includes('marriott') ||
-        lowerName.includes('sheraton') || lowerName.includes('sofitel') || lowerName.includes('spa') ||
-        lowerName.includes('resort') || lowerName.includes('palace') || lowerName.includes('holiday')) {
-      return 'hotel';
-    }
-    if (lowerName.includes('tour operator') || lowerName.includes('operator')) return 'tour operator';
-    if (lowerName.includes('travel agency') || (lowerName.includes('travel') && !lowerName.includes('tour'))) {
-      return 'agence de voyage';
-    }
-    if (lowerName.includes('tour') || lowerName.includes('tours') || lowerName.includes('excursion') ||
-        lowerName.includes('safari') || lowerName.includes('transfer') || lowerName.includes('adventure')) {
-      return 'transport touristique';
-    }
-    return '';
-  };
-
-  const getSecteurInfo = (secteur) => {
+  // ⭐ getSecteurInfo avec useCallback et protection
+  const getSecteurInfo = useCallback((secteur) => {
     if (!secteur) {
       return {
         name: 'Non défini',
@@ -273,20 +287,25 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
       };
     }
     const normalized = secteur.toLowerCase().trim();
-    return ESTABLISHMENT_TYPES[normalized] || {
+    if (ESTABLISHMENT_TYPES && ESTABLISHMENT_TYPES[normalized]) {
+      return ESTABLISHMENT_TYPES[normalized];
+    }
+    return {
       name: secteur,
       icon: MapPin,
       badge: 'bg-gray-100 text-gray-800',
       border: 'border-gray-300'
     };
-  };
+  }, []);
 
-  const getFilteredContacts = () => {
-    return contacts.filter(contact => {
+  // ⭐ filteredContacts avec useMemo - TOUJOURS un tableau
+  const filteredContacts = useMemo(() => {
+    if (!Array.isArray(safeContacts)) return [];
+    return safeContacts.filter(contact => {
       if (searchText) {
         const search = searchText.toLowerCase();
-        if (!contact.name.toLowerCase().includes(search) &&
-            !contact.email.toLowerCase().includes(search) &&
+        if (!contact.name?.toLowerCase().includes(search) &&
+            !contact.email?.toLowerCase().includes(search) &&
             !(contact.source || '').toLowerCase().includes(search)) return false;
       }
       if (filterCity && contact.city !== filterCity) return false;
@@ -297,28 +316,47 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
       }
       return true;
     });
-  };
+  }, [safeContacts, searchText, filterCity, filterSecteur]);
 
-  const filteredContacts = getFilteredContacts();
-  const availableCities = [...new Set(contacts.map(c => c.city).filter(Boolean))].sort();
-  const secteurs = [...new Set(contacts.map(c => c.secteur).filter(Boolean))].sort();
+  // ⭐ availableCities avec useMemo et protection
+  const availableCities = useMemo(() => {
+    if (!Array.isArray(safeContacts)) return [];
+    return [...new Set(safeContacts.map(c => c.city).filter(Boolean))].sort();
+  }, [safeContacts]);
 
-  // ===================== GESTION DE LA SÉLECTION =====================
-  const toggleSelect = (id) => {
+  // ⭐ secteurs avec useMemo et protection
+  const secteurs = useMemo(() => {
+    if (!Array.isArray(safeContacts)) return [];
+    return [...new Set(safeContacts.map(c => c.secteur).filter(Boolean))].sort();
+  }, [safeContacts]);
+
+  // ⭐ toggleSelect avec useCallback
+  const toggleSelect = useCallback((id) => {
     setSelectedContacts(prev =>
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
-  };
+  }, []);
 
-  const selectAll = () => {
+  // ⭐ selectAll avec useCallback
+  const selectAll = useCallback(() => {
     if (selectedContacts.length === filteredContacts.length) {
       setSelectedContacts([]);
     } else {
       setSelectedContacts(filteredContacts.map(c => c.id));
     }
+  }, [selectedContacts, filteredContacts]);
+
+  const handleResetFilters = () => {
+    setSearchText('');
+    setFilterCity('');
+    setFilterSecteur('');
+    setCurrentPage(1);
   };
 
-  const handleSendEmails = async () => {
+  const hasActiveFilters = searchText || filterCity || filterSecteur;
+
+  // ⭐ handleSendEmails avec useCallback
+  const handleSendEmails = useCallback(async () => {
     if (selectedContacts.length === 0) {
       alert("Sélectionnez au moins un contact");
       return;
@@ -342,41 +380,79 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
       console.error(err);
       alert("❌ Erreur lors de l'envoi (problème réseau ou serveur).");
     }
-  };
+  }, [selectedContacts]);
 
-  // ===================================================================
+  // ⭐ PAGINATION : calculer les contacts à afficher
+  const totalPages = Math.ceil(filteredContacts.length / ITEMS_PER_PAGE);
+  const paginatedContacts = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    return filteredContacts.slice(start, end);
+  }, [filteredContacts, currentPage]);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token && contacts.length === 0) {
-      axios.get('http://127.0.0.1:8000/prospects', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      }).then(res => {
-        setContacts(res.data.map(p => ({
-          id: p.id,
-          name: p.nom,
-          email: p.email,
-          phone: p.telephone,
-          city: p.ville,
-          secteur: p.secteur || detectTypeFromName(p.nom),
-          status: p.statut || 'Active'
-        })));
-      }).catch(err => console.error('Erreur chargement:', err));
-    }
-  }, [contacts.length, setContacts]);
+  // ⭐ RENDU D'UNE LIGNE DE CONTACT
+  const renderContactRow = useCallback((contact) => {
+    if (!contact) return null;
+    const secteurInfo = getSecteurInfo(contact.secteur);
+    
+    return (
+      <div key={contact.id} className="flex items-center border-b hover:bg-gray-50 transition px-4">
+        <div className="px-4 py-3 w-12 flex-shrink-0">
+          <input 
+            type="checkbox" 
+            checked={selectedContacts.includes(contact.id)} 
+            onChange={() => toggleSelect(contact.id)} 
+          />
+        </div>
+        <div className="px-4 py-3 w-48 flex-shrink-0 text-sm font-medium text-gray-800 truncate">{contact.name || '—'}</div>
+        <div className="px-4 py-3 w-56 flex-shrink-0 text-sm text-blue-600 truncate">{contact.email || '—'}</div>
+        <div className="px-4 py-3 w-32 flex-shrink-0 text-sm text-gray-600">{contact.phone || '—'}</div>
+        <div className="px-4 py-3 w-44 flex-shrink-0">
+          <div className={`px-3 py-2 rounded-lg text-sm font-bold inline-flex items-center gap-2 ${secteurInfo.badge} border-2 ${secteurInfo.border}`}>
+            {React.createElement(secteurInfo.icon, { className: "w-4 h-4" })}
+            <span>{secteurInfo.name}</span>
+          </div>
+        </div>
+        <div className="px-4 py-3 w-32 flex-shrink-0 text-sm text-gray-700 font-medium truncate">{contact.city || '—'}</div>
+        <div className="px-4 py-3 w-20 flex-shrink-0">
+          <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold
+            ${contact.score >= 90 ? 'bg-green-100 text-green-800' :
+              contact.score >= 70 ? 'bg-yellow-100 text-yellow-800' :
+              contact.score >= 50 ? 'bg-orange-100 text-orange-800' :
+              'bg-gray-100 text-gray-600'}`}>
+            {contact.score !== undefined && contact.score !== null ? contact.score : '—'}
+          </span>
+        </div>
+        <div className="px-4 py-3 w-32 flex-shrink-0">
+          <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-medium border border-blue-200">
+            <MapPin className="w-3 h-3" /> {contact.source || '—'}
+          </span>
+        </div>
+        <div className="px-4 py-3 w-24 flex-shrink-0">
+          <span className={`px-3 py-1 rounded-full text-xs font-bold ${contact.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+            {contact.status === 'Active' ? <><Circle className="w-3 h-3 fill-green-500 text-green-500 inline" /> Actif</> : contact.status || 'Inactif'}
+          </span>
+        </div>
+        <div className="px-4 py-3 w-40 flex-shrink-0 text-sm space-x-3">
+          <button onClick={() => handleEditContact(contact)} className="text-blue-600 hover:text-blue-800 font-bold inline-flex items-center gap-1">
+            <Pencil className="w-3 h-3" />Modifier
+          </button>
+          <button onClick={() => handleDeleteContact(contact.id)} className="text-red-600 hover:text-red-800 font-bold inline-flex items-center gap-1">
+            <Trash2 className="w-3 h-3" />Supprimer
+          </button>
+        </div>
+      </div>
+    );
+  }, [selectedContacts, toggleSelect, getSecteurInfo, handleEditContact, handleDeleteContact]);
 
-  const handleResetFilters = () => {
-    setSearchText('');
-    setFilterCity('');
-    setFilterSecteur('');
-  };
-
-  const hasActiveFilters = searchText || filterCity || filterSecteur;
+  // ⭐ Si pas de contacts, afficher un spinner
+  const isLoading = !Array.isArray(safeContacts) || safeContacts.length === 0;
 
   return (
     <div className="space-y-5">
       <style>{`@keyframes crm-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}.crm-spin{animation:crm-spin 1s linear infinite;display:inline-block}`}</style>
 
+      {/* ===== EN-TÊTE AVEC BOUTONS ===== */}
       <div className="flex justify-between items-center flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-gray-800">Gestion des Contacts</h2>
         <div className="flex gap-2 flex-wrap">
@@ -403,6 +479,7 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
         </div>
       </div>
 
+      {/* ===== FORMULAIRE D'AJOUT/MODIFICATION ===== */}
       {showContactForm && (
         <div className="bg-white rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold mb-4">{editingContact ? 'Modifier le Contact' : 'Ajouter un Contact'}</h3>
@@ -413,7 +490,7 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
             <input type="text" placeholder="Ville" value={newContact.city} onChange={handleContactCityChange} className="p-2 border border-gray-300 rounded-lg" />
             <select value={newContact.secteur} onChange={handleContactSecteurChange} className="p-2 border border-gray-300 rounded-lg">
               <option value="">-- Secteur --</option>
-              {Object.entries(ESTABLISHMENT_TYPES).map(([key, info]) => (
+              {ESTABLISHMENT_TYPES && Object.entries(ESTABLISHMENT_TYPES).map(([key, info]) => (
                 <option key={key} value={key}>{info.name}</option>
               ))}
             </select>
@@ -433,8 +510,10 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
         </div>
       )}
 
+      {/* ===== FILTRES ===== */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="space-y-4">
+          {/* Barre de recherche */}
           <div>
             <label className="block text-sm font-bold text-gray-800 mb-2">
               <Search className="w-4 h-4 inline mr-1" />
@@ -460,6 +539,7 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
             </div>
           </div>
 
+          {/* Filtres ville et secteur */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-bold text-gray-800 mb-2">
@@ -473,7 +553,7 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
               >
                 <option value="">Toutes les villes ({availableCities.length})</option>
                 {availableCities.map(city => {
-                  const count = contacts.filter(c => c.city === city).length;
+                  const count = safeContacts.filter(c => c.city === city).length;
                   return <option key={city} value={city}>{city} ({count})</option>;
                 })}
               </select>
@@ -489,10 +569,10 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
                 onChange={(e) => setFilterSecteur(e.target.value)}
                 className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
               >
-                <option value="">Tous les secteurs ({contacts.length})</option>
+                <option value="">Tous les secteurs ({safeContacts.length})</option>
                 {secteurs.map(secteur => {
                   const info = getSecteurInfo(secteur);
-                  const count = contacts.filter(c => c.secteur === secteur).length;
+                  const count = safeContacts.filter(c => c.secteur === secteur).length;
                   return (
                     <option key={secteur} value={secteur}>
                       {info.name} ({count})
@@ -503,6 +583,7 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
             </div>
           </div>
 
+          {/* Affichage des filtres actifs */}
           {hasActiveFilters && (
             <div className="flex items-center justify-between bg-blue-50 border-2 border-blue-200 rounded-lg p-3">
               <p className="text-sm text-blue-800">
@@ -525,91 +606,101 @@ const ContactsModule = ({ contacts, setContacts, newContact, editingContact, sho
         </div>
       </div>
 
+      {/* ===== TABLEAU AVEC PAGINATION ===== */}
       <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b">
+        <div className="px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b flex justify-between items-center">
           <h3 className="font-bold text-gray-800 flex items-center gap-2">
             {hasActiveFilters ? <Search className="w-4 h-4" /> : <ClipboardList className="w-4 h-4" />}
-            {hasActiveFilters
-              ? `${filteredContacts.length} contact${filteredContacts.length !== 1 ? 's' : ''}`
-              : `${contacts.length} contact${contacts.length !== 1 ? 's' : ''} au total`}
+            {isLoading ? 'Chargement...' : (
+              hasActiveFilters
+                ? `${filteredContacts.length} contact${filteredContacts.length !== 1 ? 's' : ''}`
+                : `${safeContacts.length} contact${safeContacts.length !== 1 ? 's' : ''} au total`
+            )}
           </h3>
+          {!isLoading && filteredContacts.length > 0 && (
+            <div className="text-sm text-gray-500">
+              Page {currentPage} sur {totalPages}
+            </div>
+          )}
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-100 border-b">
-              <tr>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">
-                  <input type="checkbox" onChange={selectAll} checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0} />
-                </th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Nom</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Email</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Téléphone</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">SECTEUR</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Ville</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Score</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Source</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Statut</th>
-                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredContacts.map((contact) => {
-                const secteurInfo = getSecteurInfo(contact.secteur);
-                return (
-                  <tr key={contact.id} className="border-b hover:bg-gray-50 transition">
-                    <td className="px-6 py-4">
-                      <input type="checkbox" checked={selectedContacts.includes(contact.id)} onChange={() => toggleSelect(contact.id)} />
-                    </td>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-800">{contact.name}</td>
-                    <td className="px-6 py-4 text-sm text-blue-600">{contact.email}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{contact.phone || '—'}</td>
-                    <td className="px-6 py-4">
-                      <div className={`px-4 py-3 rounded-lg text-sm font-bold inline-flex items-center gap-2 ${secteurInfo.badge} border-2 ${secteurInfo.border}`}>
-                        {React.createElement(secteurInfo.icon, { className: "w-5 h-5" })}
-                        <span>{secteurInfo.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-700 font-medium">{contact.city}</td>
-                    <td className="px-6 py-4">
-                      <span className={`
-                        inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold
-                        ${contact.score >= 90 ? 'bg-green-100 text-green-800' :
-                          contact.score >= 70 ? 'bg-yellow-100 text-yellow-800' :
-                          contact.score >= 50 ? 'bg-orange-100 text-orange-800' :
-                          'bg-gray-100 text-gray-600'}
-                      `}>
-                        {contact.score !== undefined && contact.score !== null ? contact.score : '—'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-medium border border-blue-200">
-                        <MapPin className="w-3 h-3" /> {contact.source || '—'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${contact.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                        {contact.status === 'Active' ? <><Circle className="w-3 h-3 fill-green-500 text-green-500 inline" /> Actif</> : contact.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm space-x-3">
-                      <button onClick={() => handleEditContact(contact)} className="text-blue-600 hover:text-blue-800 font-bold inline-flex items-center gap-1">
-                        <Pencil className="w-3 h-3" />Modifier
-                      </button>
-                      <button onClick={() => handleDeleteContact(contact.id)} className="text-red-600 hover:text-red-800 font-bold inline-flex items-center gap-1">
-                        <Trash2 className="w-3 h-3" />Supprimer
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+
+        {/* EN-TÊTE FIXE DU TABLEAU */}
+        <div className="flex items-center bg-gray-100 border-b px-4 py-3 font-bold text-sm text-gray-700">
+          <div className="w-12 flex-shrink-0">
+            <input 
+              type="checkbox" 
+              onChange={selectAll} 
+              checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0} 
+            />
+          </div>
+          <div className="w-48 flex-shrink-0">Nom</div>
+          <div className="w-56 flex-shrink-0">Email</div>
+          <div className="w-32 flex-shrink-0">Téléphone</div>
+          <div className="w-44 flex-shrink-0">SECTEUR</div>
+          <div className="w-32 flex-shrink-0">Ville</div>
+          <div className="w-20 flex-shrink-0">Score</div>
+          <div className="w-32 flex-shrink-0">Source</div>
+          <div className="w-24 flex-shrink-0">Statut</div>
+          <div className="w-40 flex-shrink-0">Actions</div>
         </div>
+
+        {/* ⭐ RENDU AVEC PAGINATION - SEULEMENT 50 CONTACTS PAR PAGE */}
+        {isLoading ? (
+          <div className="p-8 text-center text-gray-400">
+            <Loader2 className="w-12 h-12 mx-auto mb-3 text-gray-300 animate-spin" />
+            <p className="font-medium">Chargement des contacts...</p>
+            <p className="text-sm mt-1">Veuillez patienter</p>
+          </div>
+        ) : !Array.isArray(filteredContacts) || filteredContacts.length === 0 ? (
+          <div className="p-8 text-center text-gray-400">
+            <Search className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <p className="font-medium">Aucun contact trouvé</p>
+            <p className="text-sm mt-1">Essayez de modifier vos filtres</p>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-y-auto" style={{ maxHeight: '450px' }}>
+              {paginatedContacts.map(renderContactRow)}
+            </div>
+            
+            {/* ⭐ PAGINATION */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t">
+                <div className="text-sm text-gray-500">
+                  Affichage de {((currentPage - 1) * ITEMS_PER_PAGE) + 1} à {Math.min(currentPage * ITEMS_PER_PAGE, filteredContacts.length)} sur {filteredContacts.length} contacts
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                      currentPage === 1 
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    Précédent
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                      currentPage === totalPages 
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    Suivant
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
 };
-
 const OpportunitiesModule = ({ opportunities, newOpportunity, editingOpportunity, showOpportunityForm, handleOpportunityTitleChange, handleOpportunityCompanyChange, handleOpportunityAmountChange, handleOpportunityExpectedCloseChange, handleOpportunityStageChange, handleOpportunityProbabilityChange, handleAddOpportunity, handleEditOpportunity, handleDeleteOpportunity, setShowOpportunityForm, setEditingOpportunity, setNewOpportunity }) => (
   <div className="space-y-6">
     <div className="flex justify-between items-center">
@@ -1519,7 +1610,8 @@ const OutilsModule = ({ apisConfig, smtpConfig, setApisConfig }) => {
           setScraperMessage(job.message);
         }
         setScraperStatus(job?.status || 'idle');
-        if (job?.recent?.length > 0) {
+        // ⭐ CORRECTION : Vérifier que c'est un tableau
+        if (job?.recent && Array.isArray(job.recent)) {
           setScraperRecent(job.recent);
         }
       } catch (err) {
@@ -1536,7 +1628,8 @@ const OutilsModule = ({ apisConfig, smtpConfig, setApisConfig }) => {
           setOpenaiScraperMessage(jobOa.message);
         }
         setOpenaiScraperStatus(jobOa?.status || 'idle');
-        if (jobOa?.recent?.length > 0) {
+        // ⭐ CORRECTION : Vérifier que c'est un tableau
+        if (jobOa?.recent && Array.isArray(jobOa.recent)) {
           setOpenaiScraperRecent(jobOa.recent);
         }
       } catch (err) {
@@ -1684,7 +1777,8 @@ const OutilsModule = ({ apisConfig, smtpConfig, setApisConfig }) => {
             skipped={scraperSkipped}
             statusMsg={scraperMessage}
             statusKind={scraperStatus}
-            recent={scraperRecent}
+            // ⭐ CORRECTION : toujours un tableau
+            recent={Array.isArray(scraperRecent) ? scraperRecent : []}
             onLaunch={lancerScraper}
             onCancel={annulerScraper}
             isDisabled={false}
@@ -1711,7 +1805,8 @@ const OutilsModule = ({ apisConfig, smtpConfig, setApisConfig }) => {
             skipped={openaiScraperSkipped}
             statusMsg={openaiScraperMessage}
             statusKind={openaiScraperStatus}
-            recent={openaiScraperRecent}
+            // ⭐ CORRECTION : toujours un tableau
+            recent={Array.isArray(openaiScraperRecent) ? openaiScraperRecent : []}
             onLaunch={lancerScraperAvecOpenAI}
             onCancel={annulerScraperOpenAI}
             isDisabled={false}
@@ -1824,7 +1919,6 @@ const OutilsModule = ({ apisConfig, smtpConfig, setApisConfig }) => {
 
 // ===== COMPOSANT PRINCIPAL CRM =====
 const CRM = () => {
-  console.log('CRM RE-RENDU');
   const [currentModule, setCurrentModule] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [contacts, setContacts] = useState([]);
@@ -1901,19 +1995,14 @@ const CRM = () => {
       const res = await axios.get(`${API_URL}/settings/api/list`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      console.log('APIs du backend:', res.data);
-      setApisConfig(prev => ({
-        ...prev,
-        googlePlaces: res.data.google_places === true,
-        openai: res.data.openai === true
-      }));
+      const newGoogle = res.data.google_places === true;
+      const newOpenai = res.data.openai === true;
+      setApisConfig(prev => {
+         if (prev.googlePlaces === newGoogle && prev.openai === newOpenai) return prev;
+         return { ...prev, googlePlaces: newGoogle, openai: newOpenai };
+      });
     } catch (err) {
       console.error('Erreur fetch APIs:', err);
-      setApisConfig(prev => ({
-        ...prev,
-        googlePlaces: false,
-        openai: false
-      }));
     }
   }, []);
 
@@ -1924,19 +2013,13 @@ const CRM = () => {
     conversionRate: opportunities.length ? Math.round((opportunities.filter(o => o.probability >= 75).length / opportunities.length) * 100) : 0,
     tasksThisWeek: activities.filter(a => a.result === 'En attente').length,
   };
-
-  useEffect(() => {
-    fetchContacts();
-    fetchApisFromBackend();
-  }, [fetchApisFromBackend]);
-
-  const fetchContacts = async () => {
+  const fetchContacts = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
       const res = await axios.get(`${API_URL}/prospects`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      setContacts(res.data.map(p => ({
+      const newContacts = res.data.map(p => ({
         id: p.id,
         name: p.nom,
         email: p.email,
@@ -1946,9 +2029,22 @@ const CRM = () => {
         status: p.statut || p.status || "Active",
         score: p.score || 0,
         source: p.source || ''
-      })));
+      }));
+      setContacts(prev => {
+        if (prev.length === newContacts.length &&
+            prev.every((c, i) => c.id === newContacts[i].id && c.score === newContacts[i].score)) {
+          return prev;
+        }
+        return newContacts; 
+      });  
     } catch (err) { console.error("Erreur fetch:", err); }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchContacts();
+    fetchApisFromBackend();
+  }, [fetchContacts, fetchApisFromBackend]);
+
 
   useEffect(() => {
     let wasRunning = false;
@@ -1964,7 +2060,7 @@ const CRM = () => {
         }
        
         const now = Date.now();
-        if (job.running && (now - lastContactsUpdate > 5000)) {
+        if (job.running && (now - lastContactsUpdate > 5000) && currentModule !== 'contacts') {
           fetchContacts();
           lastContactsUpdate = now;
         }
@@ -1977,9 +2073,9 @@ const CRM = () => {
       } catch (err) { /* silencieux */ }
     };
     tick();
-    const interval = setInterval(tick, 2500);
+    const interval = setInterval(tick, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchContacts]);
 
   const fetchScrapingHistory = async () => {
     try {
@@ -2200,8 +2296,7 @@ const CRM = () => {
   const renderContent = () => {
     switch (currentModule) {
       case 'dashboard': return <Dashboard stats={stats} opportunities={opportunities} activities={activities} />;
-      case 'contacts': return <ContactsModule contacts={contacts} setContacts={setContacts} newContact={newContact} editingContact={editingContact} showContactForm={showContactForm} handleContactNameChange={handleContactNameChange} handleContactEmailChange={handleContactEmailChange} handleContactPhoneChange={handleContactPhoneChange} handleContactCityChange={handleContactCityChange} handleContactSecteurChange={handleContactSecteurChange} handleContactStatusChange={handleContactStatusChange} handleAddContact={handleAddContact} handleEditContact={handleEditContact} handleDeleteContact={handleDeleteContact} setShowContactForm={setShowContactForm} setEditingContact={setEditingContact} setNewContact={setNewContact} />;
-      case 'opportunities': return <OpportunitiesModule opportunities={opportunities} newOpportunity={newOpportunity} editingOpportunity={editingOpportunity} showOpportunityForm={showOpportunityForm} handleOpportunityTitleChange={handleOpportunityTitleChange} handleOpportunityCompanyChange={handleOpportunityCompanyChange} handleOpportunityAmountChange={handleOpportunityAmountChange} handleOpportunityExpectedCloseChange={handleOpportunityExpectedCloseChange} handleOpportunityStageChange={handleOpportunityStageChange} handleOpportunityProbabilityChange={handleOpportunityProbabilityChange} handleAddOpportunity={handleAddOpportunity} handleEditOpportunity={handleEditOpportunity} handleDeleteOpportunity={handleDeleteOpportunity} setShowOpportunityForm={setShowOpportunityForm} setEditingOpportunity={setEditingOpportunity} setNewOpportunity={setNewOpportunity} />;
+      case 'contacts': return <ErrorBoundary><ContactsModule contacts={contacts} setContacts={setContacts} newContact={newContact} editingContact={editingContact} showContactForm={showContactForm} handleContactNameChange={handleContactNameChange} handleContactEmailChange={handleContactEmailChange} handleContactPhoneChange={handleContactPhoneChange} handleContactCityChange={handleContactCityChange} handleContactSecteurChange={handleContactSecteurChange} handleContactStatusChange={handleContactStatusChange} handleAddContact={handleAddContact} handleEditContact={handleEditContact} handleDeleteContact={handleDeleteContact} setShowContactForm={setShowContactForm} setEditingContact={setEditingContact} setNewContact={setNewContact} /></ErrorBoundary>;      case 'opportunities': return <OpportunitiesModule opportunities={opportunities} newOpportunity={newOpportunity} editingOpportunity={editingOpportunity} showOpportunityForm={showOpportunityForm} handleOpportunityTitleChange={handleOpportunityTitleChange} handleOpportunityCompanyChange={handleOpportunityCompanyChange} handleOpportunityAmountChange={handleOpportunityAmountChange} handleOpportunityExpectedCloseChange={handleOpportunityExpectedCloseChange} handleOpportunityStageChange={handleOpportunityStageChange} handleOpportunityProbabilityChange={handleOpportunityProbabilityChange} handleAddOpportunity={handleAddOpportunity} handleEditOpportunity={handleEditOpportunity} handleDeleteOpportunity={handleDeleteOpportunity} setShowOpportunityForm={setShowOpportunityForm} setEditingOpportunity={setEditingOpportunity} setNewOpportunity={setNewOpportunity} />;
       case 'activities': return <ActivitiesModule activities={activities} newActivity={newActivity} editingActivity={editingActivity} showActivityForm={showActivityForm} handleActivityTypeChange={handleActivityTypeChange} handleActivityContactChange={handleActivityContactChange} handleActivityDescriptionChange={handleActivityDescriptionChange} handleActivityDateChange={handleActivityDateChange} handleActivityResultChange={handleActivityResultChange} handleAddActivity={handleAddActivity} handleEditActivity={handleEditActivity} handleDeleteActivity={handleDeleteActivity} setShowActivityForm={setShowActivityForm} setEditingActivity={setEditingActivity} setNewActivity={setNewActivity} />;
       case 'reports': return <ReportsModule opportunities={opportunities} contacts={contacts} />;
       case 'scraping': return <ScrapingModule scrapingHistory={scrapingHistory} fetchScrapingHistory={fetchScrapingHistory} scrapJob={scrapJob} lastProspects={lastProspects} setLastProspects={setLastProspects} />;
